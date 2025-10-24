@@ -1,0 +1,101 @@
+[
+    {
+        "id": "yp3mpekXVeBd9V-e",
+        "name": "Test migration by Jay",
+        "entityType": "host",
+        "query": "entity.zone:k8s-demo",
+        "triggering": false,
+        "description": "**bold text**. \n  __hi__. \n\na new line\n\n* bullet one\n* bullet 2 ",
+        "expirationTime": 5000,
+        "enabled": true,
+        "rules": [
+            {
+                "ruleType": "threshold",
+                "metricName": "cpu.used",
+                "metricPattern": null,
+                "rollup": 0,
+                "window": 1000,
+                "aggregation": "avg",
+                "conditionOperator": ">=",
+                "conditionValue": 0.0,
+                "severity": 5
+            }
+        ],
+        "ruleLogicalOperator": "AND",
+        "lastUpdated": 1718288404930,
+        "validVersion": 1,
+        "actions": null,
+        "migrated": false,
+        "applicationAlertConfigId": null,
+        "deleted": false,
+        "transientEventEnabled": true,
+        "transientEventThreshold": 300000,
+        "transientEventAlertMuted": false
+    },
+    {
+        "id": "leBf6hPWUiA-tufQ",
+        "name": "New migration test by Jay",
+        "entityType": "processingStatistics",
+        "query": null,
+        "triggering": false,
+        "description": "are there any hosts?",
+        "expirationTime": 60000,
+        "enabled": true,
+        "rules": [
+            {
+                "ruleType": "threshold",
+                "metricName": "plugin.host",
+                "metricPattern": null,
+                "rollup": 0,
+                "window": 10000,
+                "aggregation": "avg",
+                "conditionOperator": ">",
+                "conditionValue": 0.0,
+                "severity": 5
+            }
+        ],
+        "ruleLogicalOperator": "AND",
+        "lastUpdated": 1683174711716,
+        "validVersion": 1,
+        "actions": [],
+        "migrated": false,
+        "applicationAlertConfigId": null,
+        "deleted": false,
+        "transientEventEnabled": true,
+        "transientEventThreshold": 300000,
+        "transientEventAlertMuted": false
+    },
+    {
+        "id": "FrTLLWlnkBtItKQL",
+        "name": "Release To Test Migration",
+        "entityType": "kubernetesPod",
+        "query": "entity.kubernetes.cluster.label:ibminsta",
+        "triggering": false,
+        "description": "ibminsta OCP pod restarts",
+        "expirationTime": 60000,
+        "enabled": true,
+        "rules": [
+            {
+                "ruleType": "threshold",
+                "metricName": "restartCount",
+                "metricPattern": null,
+                "rollup": 0,
+                "window": 90000,
+                "aggregation": "sum",
+                "conditionOperator": ">",
+                "conditionValue": 2.0,
+                "severity": 10
+            }
+        ],
+        "ruleLogicalOperator": "AND",
+        "lastUpdated": 1637153705283,
+        "validVersion": 1,
+        "actions": null,
+        "migrated": false,
+        "applicationAlertConfigId": null,
+        "deleted": false,
+        "transientEventEnabled": true,
+        "transientEventThreshold": 300000,
+        "transientEventAlertMuted": false
+    }
+]
