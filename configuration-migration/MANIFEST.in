@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include config.ini
+include *.json
+recursive-include alert-channels *.py
+recursive-include alert-configs *.py
+recursive-include custom-events-specification *.py
