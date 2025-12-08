@@ -99,6 +99,12 @@ This tool provides a **unified, automated approach** to Instana configuration ma
 - **Time windows** and evaluation periods
 - **Integration mappings** to alert channels
 
+### 4. Custom Dashboards
+- **Dashboard widgets** and configurations
+- **User permissions** and sharing settings
+- **Timezone and time window** settings
+- **Chart and graph** configurations
+
 ## 🛠️ Installation
 
 ### Prerequisites
@@ -217,6 +223,19 @@ uv run cli.py configs --events-source file --events-file-path source_alert_confi
 # Fetch alert configurations from API but save to a file for future use
 uv run cli.py configs --events-source api --events-file-path my_alert_configs.json \
                       --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+#### Custom Dashboards Migration
+
+```bash
+# Basic usage with command line arguments
+uv run cli.py custom-dashboards --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com  \
+                               --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com --default-owner-id dummy_owner_id
+
+# Using a configuration file
+uv run cli.py custom-dashboards --config-file config.ini --default-owner-id dummy_owner_id --on-duplicate skip
+
+# Disable SSL verification (not recommended for production)
+uv run cli.py custom-dashboards --no-verify-ssl --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL --default-owner-id dummy_owner_id
 ```
 
 ### Configuration File Format
@@ -277,6 +296,8 @@ configuration-migration/
 │   └── migrator.py              # Alert channels migrator
 └── alert-configs/
     └── migrator.py              # Alert configurations migrator
+└── custom-dashboards/
+    └── migrator.py              # Custom dashboards migrator
 ```
 
 ## ✨ Features
