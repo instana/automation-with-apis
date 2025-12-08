@@ -18,6 +18,8 @@ class Config:
         self.verify_ssl = True
         self.events_source = "api"  # Default to API source
         self.events_file_path = "source_events.json"  # Default file path
+        self.default_owner_id = None # Default owner ID for unmapped users
+        self.on_duplicate = "ask" # Default action for duplicate items
 
     @classmethod
     def from_args(cls, args: Optional[list] = None) -> 'Config':
@@ -67,6 +69,15 @@ class Config:
             "--events-file-path",
             help="Path to the source events JSON file (when using file source)"
         )
+        parser.add_argument(
+            "--default-owner-id",
+            help="Default owner ID for unmapped users"
+        )
+        parser.add_argument(
+            "--on-duplicate",
+            choices=["skip", "update", "cancel"],
+            help="Action to take when a duplicate is found (default: ask)"
+        )
         
         parsed_args = parser.parse_args(args)
         
@@ -91,6 +102,10 @@ class Config:
             config.events_source = parsed_args.events_source
         if parsed_args.events_file_path:
             config.events_file_path = parsed_args.events_file_path
+        if parsed_args.default_owner_id:
+            config.default_owner_id = parsed_args.default_owner_id
+        if parsed_args.on_duplicate:
+            config.on_duplicate = parsed_args.on_duplicate
             
         # Environment variables override command line arguments
         config.load_from_env()
@@ -128,6 +143,10 @@ class Config:
                 self.events_source = parser["general"]["events_source"]
             if "events_file_path" in parser["general"]:
                 self.events_file_path = parser["general"]["events_file_path"]
+            if "default_owner_id" in parser["general"]:
+                self.default_owner_id = parser["general"]["default_owner_id"]
+            if "on_duplicate" in parser["general"]:
+                self.on_duplicate = parser["general"]["on_duplicate"]
     
     def load_from_env(self) -> None:
         """Load configuration from environment variables."""
@@ -145,6 +164,10 @@ class Config:
             self.events_source = os.environ["EVENTS_MIGRATOR_EVENTS_SOURCE"]
         if "EVENTS_MIGRATOR_EVENTS_FILE_PATH" in os.environ:
             self.events_file_path = os.environ["EVENTS_MIGRATOR_EVENTS_FILE_PATH"]
+        if "EVENTS_MIGRATOR_DEFAULT_OWNER_ID" in os.environ:
+            self.default_owner_id = os.environ["EVENTS_MIGRATOR_DEFAULT_OWNER_ID"]
+        if "EVENTS_MIGRATOR_ON_DUPLICATE" in os.environ:
+            self.on_duplicate = os.environ["EVENTS_MIGRATOR_ON_DUPLICATE"]
     
     def validate(self) -> None:
         """Validate that the configuration is complete.

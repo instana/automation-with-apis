@@ -157,9 +157,13 @@ events_file_path = test_events.json
         with pytest.raises(ValueError, match="Target backend URL is required"):
             config.validate()
 
+    @patch('gettext.translation')
     @patch('config.argparse.ArgumentParser.parse_args')
-    def test_from_args_with_config_file(self, mock_parse_args):
+    def test_from_args_with_config_file(self, mock_parse_args, mock_gettext):
         """Test creating config from args with config file."""
+        # Mock gettext to prevent it from trying to read .mo files
+        mock_gettext.return_value.gettext.return_value = ''
+
         # Mock parsed args
         mock_args = type('MockArgs', (), {
             'config_file': 'test_config.ini',
@@ -169,7 +173,9 @@ events_file_path = test_events.json
             'target_url': None,
             'no_verify_ssl': False,
             'events_source': None,
-            'events_file_path': None
+            'events_file_path': None,
+            'default_owner_id': None,
+            'on_duplicate': None
         })()
         mock_parse_args.return_value = mock_args
         
@@ -192,9 +198,13 @@ url = https://file.target.com
                 assert config.target_token == "file_target_token"
                 assert config.target_url == "https://file.target.com"
 
+    @patch('gettext.translation')
     @patch('config.argparse.ArgumentParser.parse_args')
-    def test_from_args_command_line_override(self, mock_parse_args):
+    def test_from_args_command_line_override(self, mock_parse_args, mock_gettext):
         """Test that command line args override config file."""
+        # Mock gettext
+        mock_gettext.return_value.gettext.return_value = ''
+
         # Mock parsed args
         mock_args = type('MockArgs', (), {
             'config_file': 'test_config.ini',
@@ -204,7 +214,9 @@ url = https://file.target.com
             'target_url': 'https://cli.target.com',
             'no_verify_ssl': True,
             'events_source': 'file',
-            'events_file_path': 'cli_events.json'
+            'events_file_path': 'cli_events.json',
+            'default_owner_id': 'cli_owner_id',
+            'on_duplicate': 'update'
         })()
         mock_parse_args.return_value = mock_args
         

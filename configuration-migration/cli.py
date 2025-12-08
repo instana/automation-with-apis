@@ -52,7 +52,20 @@ def main():
         configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert configurations (api or file)')
         configs_parser.add_argument('--events-file-path', help='Path to the source configurations JSON file (when using file source)')
-        
+
+        # Custom dashboards migrator       
+        custom_dashboards_parser = subparsers.add_parser('custom-dashboards', help='Migrate custom dashboards')
+        custom_dashboards_parser.add_argument('--config-file', help='Path to configuration file')
+        custom_dashboards_parser.add_argument('--source-token', help='API token for source backend')
+        custom_dashboards_parser.add_argument('--source-url', help='URL for source backend')
+        custom_dashboards_parser.add_argument('--target-token', help='API token for target backend')
+        custom_dashboards_parser.add_argument('--target-url', help='URL for target backend')
+        custom_dashboards_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        custom_dashboards_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for dashboards (api or file)')
+        custom_dashboards_parser.add_argument('--events-file-path', help='Path to the dashboards JSON file (when using file source)')
+        custom_dashboards_parser.add_argument('--default-owner-id', help='Default owner ID for unmapped users')
+        custom_dashboards_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate dashboard is found (default: ask)')
+
         # Parse arguments
         args = parser.parse_args()
         
@@ -116,6 +129,20 @@ def main():
                 sys.exit(0)
             else:
                 # Exit with error code if no configurations were migrated
+                sys.exit(1)
+
+        elif args.command == 'custom-dashboards':
+            # Import and run the custom dashboards migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'custom-dashboards'))
+            from migrator import CustomDashboardsMigrator
+            migrator = CustomDashboardsMigrator(config)
+            result = migrator.migrate()
+            
+            # Exit with success if at least one dashboard was migrated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                # Exit with error code if no dashboards were migrated
                 sys.exit(1)
             
     except ValueError as e:
