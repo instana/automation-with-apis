@@ -117,7 +117,7 @@ This tool provides a **unified, automated approach** to Instana configuration ma
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/instana-configuration-migration.git
+git clone https://github.com/instana/automation-with-apis.git
 cd instana-configuration-migration
 
 # Install dependencies using uv
@@ -131,7 +131,7 @@ uv run python --version
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/instana-configuration-migration.git
+git clone https://github.com/instana/automation-with-apis.git
 cd instana-configuration-migration
 
 # Install dependencies
@@ -390,7 +390,7 @@ You can now use a local JSON file as the source for custom events or alert chann
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/instana-configuration-migration.git
+git clone https://github.com/instana/automation-with-apis.git
 cd instana-configuration-migration
 
 # Install development dependencies
