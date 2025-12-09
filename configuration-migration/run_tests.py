@@ -12,31 +12,20 @@ def run_tests():
     print("🧪 Running Unit Tests for Configuration Migration Project")
     print("=" * 60)
     
+    # Change to the directory of this script
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
     # Set up environment
     env = os.environ.copy()
     env['PYTHONPATH'] = '.'
     
     # Test files to run
     test_files = [
-        'tests/test_config.py::TestConfig::test_init_default_values',
-        'tests/test_config.py::TestConfig::test_load_from_file',
-        'tests/test_config.py::TestConfig::test_load_from_env',
-        'tests/test_config.py::TestConfig::test_get_source_headers',
-        'tests/test_config.py::TestConfig::test_get_target_headers',
-        'tests/test_config.py::TestConfig::test_validate_success',
-        'tests/test_config.py::TestConfig::test_validate_missing_source_token',
-        'tests/test_config.py::TestConfig::test_validate_missing_source_url',
-        'tests/test_config.py::TestConfig::test_validate_missing_target_token',
-        'tests/test_config.py::TestConfig::test_validate_missing_target_url',
-        'tests/test_events_migrator.py::TestEventsMigrator::test_init',
-        'tests/test_events_migrator.py::TestEventsMigrator::test_get_source_events_from_file',
-        'tests/test_events_migrator.py::TestEventsMigrator::test_get_target_events',
-        'tests/test_alert_channels_migrator.py::TestAlertChannelsMigrator::test_init',
-        'tests/test_alert_channels_migrator.py::TestAlertChannelsMigrator::test_get_source_channels_from_file',
-        'tests/test_alert_channels_migrator.py::TestAlertChannelsMigrator::test_get_target_channels',
-        'tests/test_alert_configs_migrator.py::TestAlertConfigsMigrator::test_init',
-        'tests/test_alert_configs_migrator.py::TestAlertConfigsMigrator::test_get_source_configs_from_file',
-        'tests/test_alert_configs_migrator.py::TestAlertConfigsMigrator::test_get_target_configs'
+        'tests/test_config.py',
+        'tests/test_events_migrator.py',
+        'tests/test_alert_channels_migrator.py',
+        'tests/test_alert_configs_migrator.py',
+        'tests/test_custom_dashboards_migrator.py'
     ]
     
     total_passed = 0
@@ -44,7 +33,7 @@ def run_tests():
     results = {}
     
     for test_file in test_files:
-        print(f"\n📋 Running tests in {test_file}...")
+        print(f" 📋 Running tests in {test_file}...")
         try:
             result = subprocess.run(
                 ['uv', 'run', 'pytest', test_file, '-v', '--tb=short'],
