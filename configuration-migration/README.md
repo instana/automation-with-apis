@@ -2,7 +2,7 @@
 
 A comprehensive, enterprise-grade tool for migrating Instana configurations between different environments, instances, and organizations. This tool streamlines the process of moving custom events, alert channels, alert configurations, and other Instana resources across your infrastructure.
 
-## 🌟 Overview
+## Overview
 
 The Instana Configuration Migration Tool is designed to solve real-world challenges faced by DevOps teams, SREs, and platform engineers who need to:
 
@@ -12,74 +12,7 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 - **Backup and restore** critical monitoring configurations
 - **Comply with infrastructure-as-code** practices for monitoring configurations
 
-## 🎯 Background & Problem Statement
-
-### The Challenge
-
-Modern organizations often operate multiple Instana environments for different purposes:
-- **Development/Testing**: For validating monitoring configurations
-- **Staging**: For pre-production testing and validation
-- **Production**: For live monitoring and alerting
-- **Disaster Recovery**: For business continuity
-- **Multi-region**: For global application monitoring
-
-Managing configurations across these environments manually is:
-- **Error-prone**: Copy-paste errors, missing configurations
-- **Time-consuming**: Hours of manual work for each migration
-- **Inconsistent**: Different configurations across environments
-- **Risky**: Potential downtime due to misconfigured monitoring
-- **Non-compliant**: Difficult to audit and track changes
-
-### The Solution
-
-This tool provides a **unified, automated approach** to Instana configuration management that:
-- **Eliminates manual errors** through programmatic migration
-- **Reduces migration time** from hours to minutes
-- **Ensures consistency** across all environments
-- **Provides audit trails** for compliance requirements
-- **Supports both API and file-based** migration strategies
-
-## 🚀 Key Benefits
-
-### For DevOps Teams
-- **Automated Migration**: Reduce manual configuration time by 90%
-- **Error Reduction**: Eliminate copy-paste and configuration errors
-- **Environment Parity**: Ensure identical configurations across environments
-- **Rollback Capability**: Easy restoration of previous configurations
-
-### For SREs
-- **Monitoring Reliability**: Consistent alerting and monitoring across environments
-- **Incident Prevention**: Reduce false positives/negatives through standardized configurations
-- **Operational Efficiency**: Faster environment setup and configuration updates
-- **Compliance**: Maintain audit trails for configuration changes
-
-### For Platform Engineers
-- **Infrastructure as Code**: Version control your monitoring configurations
-- **Standardization**: Enforce consistent monitoring patterns across teams
-- **Scalability**: Manage hundreds of configurations efficiently
-- **Integration**: Easily integrate with CI/CD pipelines
-
-## 🏗️ Architecture & Design Principles
-
-### Modular Design
-- **Separate migrators** for different resource types
-- **Common configuration** management across all migrators
-- **Unified CLI interface** for consistent user experience
-- **Extensible architecture** for adding new resource types
-
-### Security First
-- **Token-based authentication** for secure API access
-- **SSL verification** by default (configurable)
-- **Environment variable support** for sensitive credentials
-- **No credential storage** in code or logs
-
-### Flexibility
-- **Multiple source types**: API endpoints or local JSON files
-- **Configurable targets**: Any Instana instance with proper credentials
-- **Customizable behavior**: Skip, update, or create new resources
-- **Batch operations**: Migrate multiple resources in one command
-
-## 📋 Supported Resources
+## Supported Resources
 
 ### 1. Custom Event Specifications
 - **Event rules** and conditions
@@ -99,7 +32,7 @@ This tool provides a **unified, automated approach** to Instana configuration ma
 - **Time windows** and evaluation periods
 - **Integration mappings** to alert channels
 
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 - **Python 3.8+** (3.9+ recommended)
@@ -111,8 +44,8 @@ This tool provides a **unified, automated approach** to Instana configuration ma
 
 ```bash
 # Clone the repository
-git clone https://github.ibm.com/instana/automation-with-apis.git
-cd instana-configuration-migration
+git clone https://github.com/instana/automation-with-apis.git
+cd configuration-migration
 
 # Install dependencies using uv
 uv sync
@@ -125,8 +58,8 @@ uv run python --version
 
 ```bash
 # Clone the repository
-git clone https://github.ibm.com/instana/automation-with-apis.git
-cd instana-configuration-migration
+git clone https://github.com/instana/automation-with-apis.git
+cd configuration-migration
 
 # Install dependencies
 pip install -r requirements.txt
@@ -147,7 +80,7 @@ uv add requests urllib3 configparser
 uv run configuration-migration/cli.py events --help
 ```
 
-## 📖 Usage
+## Usage
 
 ### Command Line Interface
 
@@ -250,7 +183,7 @@ You can also configure the tool using environment variables:
 - `EVENTS_MIGRATOR_EVENTS_SOURCE`: Set to "api" or "file" to specify events source
 - `EVENTS_MIGRATOR_EVENTS_FILE_PATH`: Path to the events JSON file
 
-## ⚙️ Configuration Priority
+## Configuration Priority
 
 The tool uses the following priority order for configuration (highest to lowest):
 
@@ -258,7 +191,7 @@ The tool uses the following priority order for configuration (highest to lowest)
 2. **Command line arguments**
 3. **Configuration file**
 
-## 🏛️ Project Structure
+## Project Structure
 
 ```
 configuration-migration/
@@ -279,7 +212,7 @@ configuration-migration/
     └── migrator.py              # Alert configurations migrator
 ```
 
-## ✨ Features
+## Features
 
 ### File-Based Source
 
@@ -363,13 +296,13 @@ You can now use a local JSON file as the source for custom events or alert chann
 ]
 ```
 
-## 🔧 Development
+## Development
 
 ### Setting Up Development Environment
 
 ```bash
 # Clone the repository
-git clone https://github.ibm.com/instana/automation-with-apis.git
+git clone https://github.com/instana/automation-with-apis.git
 cd automation-with-apis/configuration-migration
 
 # Install development dependencies
@@ -394,15 +327,12 @@ The tool is designed to be easily extensible. To add a new resource type:
 3. **Add CLI integration** in `cli.py`
 4. **Update documentation** and examples
 
-### Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## 🧪 Testing
+## Testing
 
 ### Test Suite Overview
 
-The project includes a comprehensive test suite with **19 unit tests** covering all core functionality:
+The project includes a comprehensive test suite covering all core functionality:
 
 - **✅ 100% test pass rate** - All tests currently passing
 - **✅ 69% code coverage** for core modules
@@ -422,48 +352,6 @@ This command will:
 - Provide detailed pass/fail status for each test
 - Generate coverage reports
 - Display comprehensive test summary
-
-#### Test Results Example
-```
-🧪 Running Unit Tests for Configuration Migration Project
-============================================================
-
-📋 Running tests in tests/test_config.py::TestConfig::test_init_default_values...
-✅ tests/test_config.py::TestConfig::test_init_default_values - PASSED
-
-📈 Total Results:
-   ✅ Passed: 19
-   ❌ Failed: 0
-   📊 Total: 19
-
-🎉 All tests passed!
-
-============================================================
-📊 COVERAGE REPORT
-============================================================
-✅ Coverage report generated successfully!
-
-📁 HTML coverage report saved to: htmlcov/index.html
-
-📈 Overall Coverage: TOTAL          94     29    69%
-
-📋 Coverage includes:
-   ✅ config.py - Configuration management (69% coverage)
-   ⚠️  Migrator classes - Limited coverage due to import issues
-   📝 Note: Full coverage requires resolving module import conflicts
-```
-
-### Test Coverage
-
-#### Current Coverage Status
-- **config.py**: 69% coverage (94 statements, 29 missed)
-- **Migrator Classes**: Limited coverage due to import path conflicts
-- **CLI Module**: Comprehensive test coverage
-
-#### Coverage Reports
-- **HTML Report**: Generated at `htmlcov/index.html`
-- **Terminal Report**: Displayed after test execution
-- **Coverage Data**: Stored in `.coverage` file
 
 ### Test Structure
 
@@ -562,14 +450,6 @@ class TestConfig:
         # Test implementation
 ```
 
-### Continuous Integration
-
-The test suite is designed to run in CI/CD environments:
-- **Fast execution**: Individual tests run quickly
-- **Reliable results**: Consistent pass/fail status
-- **Coverage reporting**: Automated coverage analysis
-- **Error isolation**: Clear identification of failing tests
-
 ### Known Limitations
 
 #### Import Path Issues
@@ -580,48 +460,8 @@ Some migrator tests have limited coverage due to Python import path conflicts wh
 - Core functionality is fully tested
 - Coverage is accurate for working modules
 
-## 🚨 Troubleshooting
 
-### Common Issues
+## License
 
-#### Authentication Errors
-- **401 Unauthorized**: Check your API tokens and ensure they're valid
-- **403 Forbidden**: Verify your tokens have the necessary permissions
-- **Token expiration**: Refresh your API tokens if they've expired
+This project is licensed under the Apache-2.0 license.
 
-#### Network Issues
-- **Connection timeout**: Check network connectivity and firewall rules
-- **SSL errors**: Verify SSL certificates or use `--no-verify-ssl` (not recommended for production)
-- **Proxy issues**: Configure proxy settings if required by your network
-
-#### Data Format Issues
-- **422 Unprocessable Entity**: Check that your data format matches the expected schema
-- **Missing required fields**: Ensure all required fields are present in your data
-- **Invalid field values**: Verify field values are within acceptable ranges
-
-### Getting Help
-
-- **Documentation**: Check this README and the individual migrator documentation
-- **Issues**: Report bugs and request features on GitHub
-- **Discussions**: Join community discussions for help and best practices
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Support
-
-- **GitHub Issues**: For bug reports and feature requests
-- **GitHub Discussions**: For community support and questions
-- **Documentation**: Comprehensive guides and examples
-- **Examples**: Sample configurations and use cases
-
-## 🙏 Acknowledgments
-
-- **Instana Team**: For the excellent monitoring platform and API
-- **Open Source Community**: For the tools and libraries that make this possible
-- **Contributors**: Everyone who has helped improve this tool
-
----
-
-**Made with ❤️ for the DevOps and SRE community**
