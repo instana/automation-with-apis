@@ -20,7 +20,12 @@ class TestCustomDashboardsMigrator(unittest.TestCase):
         self.config.source_url = "http://test.com"
         self.config.target_token = "test"
         self.config.target_url = "http://test.com"
+        self.config.on_duplicate = "skip"  # Set default for tests
         self.migrator = CustomDashboardsMigrator(self.config)
+        # Force synchronous mode and ensure attributes exist
+        self.migrator._use_async = False
+        self.migrator.req_custom_dashboards = "/api/custom-dashboard"
+        self.migrator.req_shareable_users = "/api/settings/users"
 
     @patch('requests.get')
     def test_get_source_dashboards(self, mock_get):
@@ -98,18 +103,17 @@ class TestCustomDashboardsMigrator(unittest.TestCase):
         success = self.migrator._update_dashboard({'title': 'Dashboard to Update'}, 'Dashboard to Update', target_dashboards)
         self.assertTrue(success)
 
-    @patch('builtins.input', return_value='s')
-    @patch('migrator.CustomDashboardsMigrator._get_source_dashboards')
-    @patch('migrator.CustomDashboardsMigrator._get_target_dashboards')
-    @patch('migrator.CustomDashboardsMigrator._get_shareable_users')
-    @patch('migrator.CustomDashboardsMigrator._map_users')
-    def test_migrate_skip_existing(self, mock_map_users, mock_get_users, mock_get_target, mock_get_source, mock_input):
-        mock_get_source.return_value = [{'id': '1', 'title': 'Test Dashboard', 'owner': 'src_user1'}]
+    @patch.object(CustomDashboardsMigrator, '_get_source_dashboards')
+    @patch.object(CustomDashboardsMigrator, '_get_target_dashboards')
+    @patch.object(CustomDashboardsMigrator, '_get_shareable_users')
+    @patch.object(CustomDashboardsMigrator, '_map_users')
+    def test_migrate_skip_existing(self, mock_map_users, mock_get_users, mock_get_target, mock_get_source):
+        mock_get_source.return_value = [{'id': '1', 'title': 'Test Dashboard', 'owner': 'src_user1', 'widgets': [{'id': 'w1', 'width': 1, 'height': 1, 'config': {}}]}]
         mock_get_target.return_value = [{'id': '2', 'title': 'Test Dashboard'}]
         mock_get_users.return_value = [{'id': 'src_user1', 'email': 'test@example.com'}]
         mock_map_users.return_value = {'src_user1': 'tgt_user1'}
 
-        result = self.migrator.migrate()
+        result = self.migrator._migrate_sync()
         self.assertEqual(result['skipped'], 1)
         self.assertEqual(result['migrated'], 0)
 
