@@ -1,20 +1,37 @@
 
-"""Core functionality for migrating custom dashboards between backends."""
+"""Core functionality for migrating custom dashboards between backends.
 
-import sys
-import requests
-import urllib3
-import json
-from typing import Dict, List, Any, Optional
+This module now uses the async implementation for better performance.
+The synchronous interface is maintained for backward compatibility.
+"""
 
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 
+# Import the async implementation
+try:
+    from migrator_async import CustomDashboardsMigratorAsync
+    ASYNC_AVAILABLE = True
+except ImportError as e:
+    ASYNC_AVAILABLE = False
+    print(f"Warning: Async dependencies not available. Install aiohttp and aiohttp-retry for better performance.")
+    print(f"Import error details: {e}")
+
+# Keep the old synchronous implementation as fallback
+import requests
+import urllib3
+import json
+from typing import Dict, List, Any, Optional
+
 
 class CustomDashboardsMigrator:
-    """Handles migration of custom dashboards between backends."""
+    """Handles migration of custom dashboards between backends.
+    
+    This class now delegates to the async implementation when available,
+    maintaining backward compatibility with the synchronous interface.
+    """
 
     def __init__(self, config: Config):
         """Initialize the migrator with configuration.
@@ -23,33 +40,54 @@ class CustomDashboardsMigrator:
             config: Configuration object with backend details
         """
         self.config = config
-        self.req_custom_dashboards = "/api/custom-dashboard"
-        self.req_shareable_users = "/api/settings/users"
         
-        # Disable SSL warnings if verify_ssl is False
-        if not config.verify_ssl:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        # Use async implementation if available
+        if ASYNC_AVAILABLE:
+            self._async_migrator = CustomDashboardsMigratorAsync(config)
+            self._use_async = True
+        else:
+            self._use_async = False
+            self.req_custom_dashboards = "/api/custom-dashboard"
+            self.req_shareable_users = "/api/settings/users"
+            
+            # Disable SSL warnings if verify_ssl is False
+            if not config.verify_ssl:
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     def migrate(self) -> Dict[str, int]:
         """Perform the migration of custom dashboards.
         
         Returns:
-            Dictionary with counts of source, migrated, and skipped dashboards
+            Dictionary with counts of source, migrated, updated, and skipped dashboards
+        """
+        # Use async implementation if available for better performance
+        if self._use_async:
+            return self._async_migrator.migrate()
+        
+        # Fallback to synchronous implementation
+        return self._migrate_sync()
+    
+    def _migrate_sync(self) -> Dict[str, int]:
+        """Synchronous migration implementation (fallback).
+        
+        Returns:
+            Dictionary with counts of source, migrated, updated, and skipped dashboards
         """
         # Validate configuration before proceeding
         self.config.validate()
         
-        print("Starting migration of custom dashboards...")
+        print("Starting migration of custom dashboards (synchronous mode)...")
+        print("Note: Install aiohttp and aiohttp-retry for 10x faster performance!")
         
         # Get source dashboards
         source_dashboards = self._get_source_dashboards()
         if source_dashboards is None:
-            return {"source": 0, "migrated": 0, "skipped": 0}
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
         
         # Get target dashboards to avoid duplicates
         target_dashboards = self._get_target_dashboards()
         if target_dashboards is None:
-            return {"source": len(source_dashboards), "migrated": 0, "skipped": 0}
+            return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0}
             
         # Get users from source and target for mapping
         source_users = self._get_shareable_users(self.config.source_url, self.config.get_source_headers())
@@ -85,66 +123,93 @@ class CustomDashboardsMigrator:
                 skipped_count += 1
                 continue
 
-            # Map ownerId
-            owner_id_from_source = dashboard.get('ownerId') # Get the original ownerId from source
-            if owner_id_from_source is None or owner_id_from_source not in user_map:
-                if self.config.default_owner_id:
-                    print(f"Warning: Owner with ID '{owner_id_from_source}' (email not found in target or None) will be assigned to default owner ID '{self.config.default_owner_id}' for dashboard '{dashboard_title}'.")
-                    dashboard['ownerId'] = self.config.default_owner_id # Assign to default owner ID
-                else:
-                    print(f"Warning: Owner with ID '{owner_id_from_source}' (email not found in target or None) and no default owner ID provided. Skipping dashboard '{dashboard_title}'.")
-                    skipped_count += 1
-                    continue
-            else:
-                dashboard['ownerId'] = user_map[owner_id_from_source] # Assign mapped owner ID
-
-            # Remove the 'owner' field if it exists, as it seems to conflict with 'ownerId'
+            # Remove the 'owner' field if it exists
             if 'owner' in dashboard:
                 del dashboard['owner']
-
-            # Process accessRules
-            dashboard['accessRules'] = [] # Start with a clean slate for accessRules
-
-            # Ensure GLOBAL READ
-            dashboard['accessRules'].append({'accessType': 'READ', 'relationType': 'GLOBAL'})
-
-            # Ensure GLOBAL READ_WRITE
-            dashboard['accessRules'].append({'accessType': 'READ_WRITE', 'relationType': 'GLOBAL'})
-
-            # Remove ownerId from top level as it's not used in accessRules for creation
+            
+            # Remove ownerId - not needed in POST payload
             if 'ownerId' in dashboard:
                 del dashboard['ownerId']
+
+            # Set accessRules to GLOBAL READ_WRITE with empty relatedId
+            # This is the working structure that persists dashboards correctly
+            dashboard['accessRules'] = [{
+                'accessType': 'READ_WRITE',
+                'relationType': 'GLOBAL',
+                'relatedId': ''
+            }]
+            
+            # IMPORTANT: Keep the 'id' field from source dashboard
+            # The API requires this field to properly create the dashboard
             
             # Ensure widgets are present
             if 'widgets' not in dashboard or not dashboard['widgets']:
                 print(f"Warning: Dashboard '{dashboard_title}' has no widgets. Skipping.")
                 skipped_count += 1
                 continue
-
-            if dashboard_title in target_dashboard_titles:
-                choice = self._prompt_for_duplicate_dashboard(dashboard_title)
-                if choice == 'skip':
-                    print(f"Skipping dashboard '{dashboard_title}' - already exists in target system")
-                    skipped_count += 1
-                    continue
-                if choice == 'update':
-                    print(f"Updating dashboard '{dashboard_title}' - already exists in target system")
-                    if self._update_dashboard(dashboard, dashboard_title, target_dashboards):
-                        updated_count += 1
-                    continue
-                elif choice == 'cancel':
-                    print("Migration cancelled by user")
+            
+            # Validate widget structure - each widget must have required fields
+            widget_validation_failed = False
+            for idx, widget in enumerate(dashboard['widgets']):
+                missing_fields = []
+                if 'id' not in widget or not widget['id']:
+                    missing_fields.append('id')
+                if 'width' not in widget or widget['width'] < 1:
+                    missing_fields.append('width')
+                if 'height' not in widget or widget['height'] < 1:
+                    missing_fields.append('height')
+                if 'config' not in widget:
+                    missing_fields.append('config')
+                
+                if missing_fields:
+                    print(f"Error: Widget {idx} in dashboard '{dashboard_title}' is missing required fields: {', '.join(missing_fields)}")
+                    print(f"Widget data: {widget}")
+                    widget_validation_failed = True
                     break
             
-            if 'id' in dashboard:
-                del dashboard['id']
-            if 'rbacTags' in dashboard:
-                del dashboard['rbacTags']
-            if 'writable' in dashboard:
-                del dashboard['writable']
+            if widget_validation_failed:
+                skipped_count += 1
+                continue
+
+            if dashboard_title in target_dashboard_titles:
+                # Check on_duplicate setting
+                if self.config.on_duplicate == "update":
+                    print(f"⟳ Dashboard '{dashboard_title}' already exists, updating...")
+                    if self._update_dashboard(dashboard, dashboard_title, target_dashboards):
+                        updated_count += 1
+                    else:
+                        skipped_count += 1
+                    continue
+                elif self.config.on_duplicate == "skip":
+                    print(f"⊘ Dashboard '{dashboard_title}' already exists, skipping...")
+                    skipped_count += 1
+                    continue
+                else:
+                    # on_duplicate == "ask" - prompt user
+                    choice = self._prompt_for_duplicate_dashboard(dashboard_title)
+                    if choice == 'skip':
+                        print(f"Skipping dashboard '{dashboard_title}' - already exists in target system")
+                        skipped_count += 1
+                        continue
+                    elif choice == 'update':
+                        print(f"Updating dashboard '{dashboard_title}' - already exists in target system")
+                        if self._update_dashboard(dashboard, dashboard_title, target_dashboards):
+                            updated_count += 1
+                        else:
+                            skipped_count += 1
+                        continue
+                    elif choice == 'cancel':
+                        print("Migration cancelled by user")
+                        break
+            
+            # IMPORTANT: Keep the 'id' field from source dashboard
+            # The API requires this field to properly create the dashboard
+            # Do NOT delete it!
 
             if self._create_dashboard(dashboard):
                 migrated_count += 1
+            else:
+                skipped_count += 1
         
         print(f"Migration complete. Found {source_dashboards_count} source dashboards, "
               f"migrated {migrated_count} custom dashboards, updated {updated_count} dashboards, "

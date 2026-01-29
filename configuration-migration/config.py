@@ -20,6 +20,12 @@ class Config:
         self.events_file_path = "source_events.json"  # Default file path
         self.default_owner_id = None # Default owner ID for unmapped users
         self.on_duplicate = "ask" # Default action for duplicate items
+        
+        # Performance tuning parameters
+        self.max_concurrent_requests = 10  # Maximum concurrent API requests
+        self.rate_limit_per_second = 50    # API requests per second limit
+        self.request_timeout = 30          # Timeout per request in seconds
+        self.retry_attempts = 3            # Number of retry attempts for failed requests
 
     @classmethod
     def from_args(cls, args: Optional[list] = None) -> 'Config':
@@ -78,6 +84,26 @@ class Config:
             choices=["skip", "update", "cancel"],
             help="Action to take when a duplicate is found (default: ask)"
         )
+        parser.add_argument(
+            "--max-concurrent",
+            type=int,
+            help="Maximum concurrent API requests (default: 10)"
+        )
+        parser.add_argument(
+            "--rate-limit",
+            type=int,
+            help="API requests per second limit (default: 50)"
+        )
+        parser.add_argument(
+            "--request-timeout",
+            type=int,
+            help="Timeout per request in seconds (default: 30)"
+        )
+        parser.add_argument(
+            "--retry-attempts",
+            type=int,
+            help="Number of retry attempts for failed requests (default: 3)"
+        )
         
         parsed_args = parser.parse_args(args)
         
@@ -106,6 +132,14 @@ class Config:
             config.default_owner_id = parsed_args.default_owner_id
         if parsed_args.on_duplicate:
             config.on_duplicate = parsed_args.on_duplicate
+        if parsed_args.max_concurrent:
+            config.max_concurrent_requests = parsed_args.max_concurrent
+        if parsed_args.rate_limit:
+            config.rate_limit_per_second = parsed_args.rate_limit
+        if parsed_args.request_timeout:
+            config.request_timeout = parsed_args.request_timeout
+        if parsed_args.retry_attempts:
+            config.retry_attempts = parsed_args.retry_attempts
             
         # Environment variables override command line arguments
         config.load_from_env()
@@ -147,6 +181,14 @@ class Config:
                 self.default_owner_id = parser["general"]["default_owner_id"]
             if "on_duplicate" in parser["general"]:
                 self.on_duplicate = parser["general"]["on_duplicate"]
+            if "max_concurrent_requests" in parser["general"]:
+                self.max_concurrent_requests = parser["general"].getint("max_concurrent_requests")
+            if "rate_limit_per_second" in parser["general"]:
+                self.rate_limit_per_second = parser["general"].getint("rate_limit_per_second")
+            if "request_timeout" in parser["general"]:
+                self.request_timeout = parser["general"].getint("request_timeout")
+            if "retry_attempts" in parser["general"]:
+                self.retry_attempts = parser["general"].getint("retry_attempts")
     
     def load_from_env(self) -> None:
         """Load configuration from environment variables."""
@@ -168,6 +210,14 @@ class Config:
             self.default_owner_id = os.environ["EVENTS_MIGRATOR_DEFAULT_OWNER_ID"]
         if "EVENTS_MIGRATOR_ON_DUPLICATE" in os.environ:
             self.on_duplicate = os.environ["EVENTS_MIGRATOR_ON_DUPLICATE"]
+        if "EVENTS_MIGRATOR_MAX_CONCURRENT" in os.environ:
+            self.max_concurrent_requests = int(os.environ["EVENTS_MIGRATOR_MAX_CONCURRENT"])
+        if "EVENTS_MIGRATOR_RATE_LIMIT" in os.environ:
+            self.rate_limit_per_second = int(os.environ["EVENTS_MIGRATOR_RATE_LIMIT"])
+        if "EVENTS_MIGRATOR_REQUEST_TIMEOUT" in os.environ:
+            self.request_timeout = int(os.environ["EVENTS_MIGRATOR_REQUEST_TIMEOUT"])
+        if "EVENTS_MIGRATOR_RETRY_ATTEMPTS" in os.environ:
+            self.retry_attempts = int(os.environ["EVENTS_MIGRATOR_RETRY_ATTEMPTS"])
     
     def validate(self) -> None:
         """Validate that the configuration is complete.

@@ -4,9 +4,17 @@ urllib3>=2.0.0
 configparser>=5.3.0
 instana_client>=1.0.0
 
+# Async dependencies for performance optimization
+aiohttp>=3.9.0
+aiohttp-retry>=2.8.3
+
 # Development dependencies (optional)
 pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-aiohttp>=1.0.5
+aioresponses>=0.7.6
 pytest-cov>=4.1.0
+pytest-mock>=3.12.0
 ruff>=0.1.0
 black>=23.0.0
 mypy>=1.5.0
