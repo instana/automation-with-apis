@@ -25,6 +25,8 @@ setup(
         "urllib3>=2.0.0",
         "configparser>=5.3.0",
         "instana_client>=1.0.0",
+        "aiohttp>=3.9.0",
+        "aiohttp-retry>=2.8.3",
     ],
     entry_points={
         "console_scripts": [
