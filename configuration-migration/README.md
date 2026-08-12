@@ -35,23 +35,28 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 ## Installation
 
 ### Prerequisites
-- **Python 3.8+** (3.9+ recommended)
+- **Python 3.9+** (as declared in `pyproject.toml`)
 - **uv** package manager (recommended) or pip
-- **Instana access** with API tokens
-- **Network connectivity** to Instana instances
+- **Instana API tokens** for both backends, with the right permissions —
+  see [API Token Permissions](#api-token-permissions). This is the most
+  common cause of a failed first run.
+- **Network connectivity** to both Instana instances. If either is only
+  reachable over a VPN, connect first: an unreachable host surfaces as a
+  connection error rather than an obvious DNS failure.
 
 ### Using uv (Recommended)
 
 ```bash
 # Clone the repository
 git clone https://github.com/instana/automation-with-apis.git
-cd configuration-migration
+cd automation-with-apis/configuration-migration
 
 # Install dependencies using uv
 uv sync
 
-# Verify installation
-uv run python --version
+# Create your configuration from the template
+cp config.ini.example config.ini
+# then edit config.ini and fill in both tokens and URLs
 ```
 
 ### Using pip (Alternative)
@@ -59,14 +64,35 @@ uv run python --version
 ```bash
 # Clone the repository
 git clone https://github.com/instana/automation-with-apis.git
-cd configuration-migration
+cd automation-with-apis/configuration-migration
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Verify installation
-python --version
+# Create your configuration from the template
+cp config.ini.example config.ini
 ```
+
+### Verifying Your Setup
+
+Before running a migration against real data, confirm the CLI loads and
+that both backends accept your tokens.
+
+```bash
+# 1. The CLI and its subcommands are available
+uv run cli.py --help
+
+# 2. Your tokens and URLs actually work. Replace the URL and token with
+#    your own; 200 means success, 401 means a bad token, 403 means the
+#    token is valid but lacks a required permission, and a connection
+#    error usually means a missing port or no VPN.
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "Authorization: apiToken YOUR_TOKEN" \
+  "https://your-backend.example.com/api/events/settings/alertingChannels"
+```
+
+Add `-k` to that `curl` if the backend uses a self-signed certificate,
+and set `verify_ssl = false` in `config.ini` for the same reason.
 
 ### Running Without Installation
 
@@ -79,6 +105,40 @@ uv add requests urllib3 configparser
 # Run directly
 uv run configuration-migration/cli.py events --help
 ```
+
+## API Token Permissions
+
+Create tokens under **Settings > API Tokens** in each Instana UI. The
+permission each migrator needs is listed below, taken from Instana's
+published API specification.
+
+| Migrator | Source token needs | Target token needs |
+|----------|--------------------|--------------------|
+| `events` | Can configure custom alerts | Can configure custom alerts |
+| `channels` | Can configure integrations | Can configure integrations |
+| `configs` | Can configure custom alerts | Can configure custom alerts |
+| `custom-dashboards` | Default, plus *Can configure users* for owner mapping | Default; *Create public custom dashboards* if dashboards are shared |
+
+The **source token only ever reads** and the **target token writes**, so
+using a read-only source token is a good way to make it impossible to
+modify the backend you are copying from by mistake.
+
+### Why a token can list items but still fail
+
+Instana does not gate every endpoint behind the same permission, and some
+**read** endpoints require a permission whose name sounds write-only. The
+practical effect is that a partially-permissioned token lists resources
+successfully and then returns `403` when the migrator reaches for their
+details, which looks like a bug in the tool but is not.
+
+If you see `403 Client Error: Forbidden` on some endpoints while others
+return data, the token is valid but missing a permission. Compare the
+failing URL against the table above.
+
+Some permissions cannot be granted by a user who does not already hold
+them, and on a shared instance they may not appear on the token creation
+screen at all. In that case an administrator for that instance has to
+either raise your role or create the token for you.
 
 ## Usage
 
@@ -154,7 +214,13 @@ uv run cli.py configs --events-source api --events-file-path my_alert_configs.js
 
 ### Configuration File Format
 
-Create a configuration file (e.g., `config.ini`) with the following format:
+Copy the template and edit it, rather than writing the file from scratch:
+
+```bash
+cp config.ini.example config.ini
+```
+
+`config.ini.example` documents every available key. The minimum you need:
 
 ```ini
 [source]
@@ -170,6 +236,31 @@ verify_ssl = true
 events_source = api  # Use 'api' to fetch from API or 'file' to read from local file
 events_file_path = source_events.json  # Path to read/write events JSON file
 ```
+
+`config.ini` is gitignored, so your tokens are not committed.
+
+Two details that account for most first-run failures:
+
+**Include the port if the backend uses a non-default one.** Hosted
+instances are served over HTTPS on port 443, so a bare hostname works.
+A locally running instance usually listens elsewhere, and the port has to
+be part of the URL or every request fails to connect:
+
+```ini
+url = https://local-instana.example.com:4000
+```
+
+**Set `verify_ssl = false` for self-signed certificates.** Local
+development instances typically use one. Left as `true`, the run fails
+partway through with:
+
+```
+SSLError: certificate verify failed: self-signed certificate
+```
+
+This is TLS verification working as intended, not a defect in the tool.
+Note that `verify_ssl` is a single global switch covering both backends,
+so disabling it for a local target also disables it for the source.
 
 ### Environment Variables
 
@@ -190,6 +281,25 @@ The tool uses the following priority order for configuration (highest to lowest)
 1. **Environment variables**
 2. **Command line arguments**
 3. **Configuration file**
+
+## Exit Codes
+
+Every migrator exits `0` only when it changed something — specifically
+when `migrated > 0` or `updated > 0` — and `1` otherwise.
+
+**A successful run that had nothing to do therefore exits `1`.** Migrate
+the same configuration twice and the second run exits `1`, because
+everything already existed and was skipped. Exit `1` means "nothing
+changed", not "something broke".
+
+This matters if you wire the tool into CI or a shell script with
+`set -e`, where a second run would look like a failure. To distinguish a
+genuine problem from a no-op, read the summary line the migrator prints
+rather than relying on the exit code alone:
+
+```
+Migration complete. Found 12 source items, migrated 0, updated 0, skipped 12
+```
 
 ## Project Structure
 
@@ -332,26 +442,57 @@ The tool is designed to be easily extensible. To add a new resource type:
 
 ### Test Suite Overview
 
-The project includes a comprehensive test suite covering all core functionality:
-
-- **✅ 100% test pass rate** - All tests currently passing
-- **✅ 69% code coverage** for core modules
-- **✅ Comprehensive mocking** for external dependencies
-- **✅ Error handling validation** for edge cases
+Around 99 unit tests cover configuration handling and each migrator, with
+external HTTP calls mocked throughout so the suite needs no Instana
+access and makes no network requests.
 
 ### Running Tests
 
-#### Quick Test Run
+Use `run_tests.py`. It is the **only** supported way to run the whole
+suite:
+
 ```bash
-# Run all tests with detailed summary
 uv run python run_tests.py
 ```
 
-This command will:
-- Run all 19 unit tests individually
-- Provide detailed pass/fail status for each test
-- Generate coverage reports
-- Display comprehensive test summary
+> **`pytest tests/` does not work, and this is expected.** Every migrator
+> lives in a module named `migrator.py` in a differently-named directory.
+> Python caches the first `migrator` it imports, so collecting them all in
+> one process makes later test files resolve to the wrong module and fail
+> with `ImportError` or `AttributeError`. `run_tests.py` works around this
+> by running each test file in its own subprocess.
+
+To run one file at a time, that is fine — the collision only happens when
+several are collected together:
+
+```bash
+uv run pytest tests/test_config.py -v
+uv run pytest tests/test_events_migrator.py::TestEventsMigrator -v
+```
+
+### Known Test Failures
+
+The suite does **not** currently pass cleanly. If you see these on a
+fresh checkout, you have not broken anything:
+
+| File | Failing | Cause |
+|------|---------|-------|
+| `tests/test_cli.py` | 7 of 7 | Patches `cli.EventsMigrator`, but `cli.py` imports migrators *inside* each dispatch branch, so there is no module attribute to patch. Excluded from `run_tests.py`, so it normally goes unnoticed. |
+| `tests/test_config.py` | 2 of 12 | Hand-built `MockArgs` fixtures predate the performance-tuning arguments added to `Config.from_args`, so they lack `max_concurrent` and raise `AttributeError`. |
+
+Both are stale-test problems rather than defects in the code under test.
+Fixing them is a good first contribution.
+
+### Coverage
+
+Coverage is only meaningfully measured for `config.py`. The migrator
+modules cannot be imported together in one process (see above), which is
+also why a single combined coverage report across all of them is not
+currently produced.
+
+```bash
+uv run pytest tests/test_config.py --cov=config --cov-report=term-missing
+```
 
 ### Test Structure
 
@@ -453,13 +594,75 @@ class TestConfig:
 ### Known Limitations
 
 #### Import Path Issues
-Some migrator tests have limited coverage due to Python import path conflicts when running the full test suite. This is a known limitation that doesn't affect the core functionality but impacts coverage reporting.
 
-#### Workarounds
-- Individual tests run successfully
-- Core functionality is fully tested
-- Coverage is accurate for working modules
+Every migrator module is named `migrator.py`, so only one can be imported
+per Python process. This is why `run_tests.py` runs each test file in a
+subprocess, and why combined coverage across migrators is not produced.
+Individual test files run correctly.
 
+## Troubleshooting
+
+### `SSLCertVerificationError: self-signed certificate`
+
+The backend presents a self-signed certificate, which local development
+instances normally do. Set `verify_ssl = false` in `config.ini`, or pass
+`--no-verify-ssl`. This affects both backends, not just the one that
+needs it.
+
+### The run aborts with a connection error, or `curl` returns `000`
+
+Usually one of:
+
+- **The URL is missing a port.** Local instances often listen on
+  something other than 443, and the port must be in the URL.
+- **You are not on the VPN**, if the instance is internal only.
+- **The host does not resolve.** Some local instances are reachable only
+  through an `/etc/hosts` entry, which means the name resolves on the
+  machine running the instance but not necessarily from yours.
+
+### `401 Client Error: Unauthorized`
+
+The token is wrong, expired, or was created on the other backend. Tokens
+are per-instance and are not interchangeable.
+
+### `403 Client Error: Forbidden` on some endpoints but not others
+
+The token is valid but lacks a permission. Because Instana gates
+endpoints individually, a partially-permissioned token can list resources
+and then fail when fetching their details. See
+[API Token Permissions](#api-token-permissions). Nothing about your
+network or config file is wrong in this case.
+
+### `400 ... name already used` when creating something
+
+An item with that name already exists in the target backend. Instana's
+uniqueness checks ignore differences in capitalisation and surrounding
+whitespace, so two names that look different to you can still collide.
+
+### `While reading from 'config.ini': section 'source' already exists`
+
+`config.ini` contains a duplicated `[source]` or `[target]` block. This
+is easy to cause by pasting a multi-line shell command such as a heredoc
+into an editor, or by appending to the file twice. Start again from the
+template:
+
+```bash
+cp config.ini.example config.ini
+```
+
+### The migration exits `1` but the output looks fine
+
+Expected when nothing needed changing. See [Exit Codes](#exit-codes).
+
+### `pytest tests/` fails to collect
+
+Expected. Use `uv run python run_tests.py`. See
+[Running Tests](#running-tests).
+
+### `ImportError: cannot import name ...Migrator from 'migrator'`
+
+Two migrator modules were imported in the same process. Run the test file
+on its own, or use `run_tests.py`.
 
 ## License
 
