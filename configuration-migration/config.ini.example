@@ -1,0 +1,87 @@
+# Example configuration for the Instana Configuration Migration Tool.
+#
+# Copy this file to config.ini and fill in your own values:
+#
+#     cp config.ini.example config.ini
+#
+# config.ini is gitignored, so your tokens will not be committed.
+#
+# Settings can also come from command line arguments or environment
+# variables. Precedence, highest first:
+#
+#     environment variables > command line arguments > this file
+#
+# ---------------------------------------------------------------------
+# The backend you are migrating configuration FROM. Read-only.
+# ---------------------------------------------------------------------
+[source]
+# API token for the source backend. Create one under
+# Settings > API Tokens in the source Instana UI. See "API Token
+# Permissions" in README.md for the scopes each migrator needs - a token
+# missing a scope produces a 403 on some endpoints while others still
+# work, which is confusing to debug.
+token = YOUR_SOURCE_TOKEN
+
+# Base URL of the source backend, with no trailing slash.
+#
+# Hosted instances are served over HTTPS on the default port:
+#     url = https://my-tenant.instana.io
+#
+# A locally running instance usually listens on a non-default port, and
+# that port MUST be included or every request fails to connect:
+#     url = https://local-instana.example.com:4000
+url = https://source-backend.example.com
+
+# ---------------------------------------------------------------------
+# The backend you are migrating configuration TO. This one gets written.
+# ---------------------------------------------------------------------
+[target]
+# API token for the target backend. This one needs write scopes, since
+# the tool creates and updates configuration here.
+token = YOUR_TARGET_TOKEN
+
+url = https://target-backend.example.com
+
+# ---------------------------------------------------------------------
+# Shared behaviour. All keys below are optional; defaults are shown.
+# ---------------------------------------------------------------------
+[general]
+# Verify TLS certificates. Set this to false when either backend uses a
+# self-signed certificate, which local development instances typically
+# do. Leaving it true against a self-signed certificate fails with
+# "SSLCertVerificationError: self-signed certificate", which looks like
+# a bug in the tool but is not.
+verify_ssl = true
+
+# What to do when an item already exists in the target backend:
+#   skip   - leave the existing item alone
+#   update - overwrite the existing item with the source version
+#   ask    - prompt once per item (falls back to skip with no TTY)
+#
+# Note: on the command line, --on-duplicate accepts skip, update and
+# cancel. "ask" is the default and is selected by omitting the flag, or
+# by setting it here.
+on_duplicate = ask
+
+# Where to read from or write to when using a file instead of the API.
+# With --events-source api the fetched configuration is also saved here,
+# which gives you a backup and lets later runs work offline.
+#
+# This path is shared by every migrator, so point it somewhere specific
+# to avoid one resource type overwriting another's export.
+events_source = api
+events_file_path = source_events.json
+
+# Default owner ID for dashboards whose owner has no match in the target
+# backend. Only used by the custom-dashboards migrator.
+# default_owner_id = user_id_here
+
+# ---------------------------------------------------------------------
+# Performance tuning. Only the custom-dashboards migrator uses the
+# concurrency settings; the other migrators are sequential and honour
+# request_timeout only.
+# ---------------------------------------------------------------------
+max_concurrent_requests = 10
+rate_limit_per_second = 50
+request_timeout = 30
+retry_attempts = 3

@@ -1,6 +1,6 @@
 include README.md
 include LICENSE
-include config.ini
+include config.ini.example
 include *.json
 recursive-include alert-channels *.py
 recursive-include alert-configs *.py
