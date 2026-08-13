@@ -32,6 +32,14 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 - **Time windows** and evaluation periods
 - **Integration mappings** to alert channels
 
+### 4. Maintenance Configurations
+- **Maintenance windows**, one-time and recurring
+- **Schedules** including recurrence rules and time zones
+- **Scope queries** and tag filter expressions
+- **Source IDs preserved**, so identity is exact rather than name-based
+
+See [maintenance-configs/README.md](maintenance-configs/README.md) for details.
+
 ## Installation
 
 ### Prerequisites
@@ -152,6 +160,32 @@ uv run cli.py configs --events-source api --events-file-path my_alert_configs.js
                       --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
 ```
 
+#### Maintenance Configurations Migration
+
+```bash
+# Basic usage with command line arguments
+uv run cli.py maintenance-configs --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com \
+                                  --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com
+
+# Using a configuration file
+uv run cli.py maintenance-configs --config-file config.ini
+
+# Leave existing maintenance windows untouched
+uv run cli.py maintenance-configs --on-duplicate skip --config-file config.ini
+
+# Overwrite existing maintenance windows with the source version
+uv run cli.py maintenance-configs --on-duplicate update --config-file config.ini
+
+# Use maintenance configurations from a local file instead of the API
+uv run cli.py maintenance-configs --events-source file --events-file-path my_windows.json \
+                                  --target-token TOKEN --target-url URL
+```
+
+Both tokens need the `CanConfigureMaintenanceWindows` permission, which covers
+reading as well as writing. Note that `--on-duplicate update` overwrites the
+target's windows: since maintenance windows suppress alerting, confirm the
+source is authoritative before running it against production.
+
 ### Configuration File Format
 
 Create a configuration file (e.g., `config.ini`) with the following format:
@@ -208,8 +242,11 @@ configuration-migration/
 │   └── migrator.py              # Custom events migrator
 ├── alert-channels/
 │   └── migrator.py              # Alert channels migrator
-└── alert-configs/
-    └── migrator.py              # Alert configurations migrator
+├── alert-configs/
+│   └── migrator.py              # Alert configurations migrator
+└── maintenance-configs/
+    ├── migrator.py              # Maintenance configurations migrator
+    └── README.md                # Maintenance configurations guide
 ```
 
 ## Features

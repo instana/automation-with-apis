@@ -70,6 +70,19 @@ def main():
         custom_dashboards_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
         custom_dashboards_parser.add_argument('--retry-attempts', type=int, help='Number of retry attempts for failed requests (default: 3)')
 
+        # Maintenance configurations migrator
+        maintenance_parser = subparsers.add_parser('maintenance-configs', help='Migrate maintenance configurations')
+        maintenance_parser.add_argument('--config-file', help='Path to configuration file')
+        maintenance_parser.add_argument('--source-token', help='API token for source backend')
+        maintenance_parser.add_argument('--source-url', help='URL for source backend')
+        maintenance_parser.add_argument('--target-token', help='API token for target backend')
+        maintenance_parser.add_argument('--target-url', help='URL for target backend')
+        maintenance_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        maintenance_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for maintenance configurations (api or file)')
+        maintenance_parser.add_argument('--events-file-path', help='Path to the maintenance configurations JSON file (when using file source)')
+        maintenance_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a maintenance configuration already exists in the target (default: ask)')
+        maintenance_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
+
         # Parse arguments
         args = parser.parse_args()
         
@@ -148,7 +161,21 @@ def main():
             else:
                 # Exit with error code if no dashboards were migrated
                 sys.exit(1)
-            
+
+        elif args.command == 'maintenance-configs':
+            # Import and run the maintenance configurations migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'maintenance-configs'))
+            from migrator import MaintenanceConfigsMigrator
+            migrator = MaintenanceConfigsMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one configuration was migrated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                # Exit with error code if no configurations were migrated
+                sys.exit(1)
+
     except ValueError as e:
         print(f"Configuration error: {e}")
         sys.exit(1)
