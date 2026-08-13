@@ -5,3 +5,4 @@ include *.json
 recursive-include alert-channels *.py
 recursive-include alert-configs *.py
 recursive-include custom-events-specification *.py
+recursive-include maintenance-configs *.py
