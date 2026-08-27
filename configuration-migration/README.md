@@ -385,7 +385,7 @@ uv run python run_tests.py
 ```
 
 This command will:
-- Run all 19 unit tests individually
+- Run all tests across 6 test files individually
 - Provide detailed pass/fail status for each test
 - Generate coverage reports
 - Display comprehensive test summary
@@ -395,13 +395,15 @@ This command will:
 #### Test Files
 ```
 tests/
-├── test_config.py              # Configuration management tests
-├── test_events_migrator.py     # Custom events migrator tests
-├── test_alert_channels_migrator.py  # Alert channels migrator tests
-├── test_alert_configs_migrator.py   # Alert configs migrator tests
-├── test_cli.py                 # CLI interface tests
-├── conftest.py                 # Shared test fixtures
-└── __init__.py                 # Package initialization
+├── test_config.py                        # Configuration management tests
+├── test_events_migrator.py               # Custom events migrator tests
+├── test_alert_channels_migrator.py       # Alert channels migrator tests
+├── test_alert_configs_migrator.py        # Alert configs migrator tests
+├── test_custom_dashboards_migrator.py    # Custom dashboards migrator tests
+├── test_maintenance_configs_migrator.py  # Maintenance configs migrator tests
+├── test_cli.py                           # CLI interface tests
+├── conftest.py                           # Shared test fixtures
+└── __init__.py                           # Package initialization
 ```
 
 #### Test Categories
