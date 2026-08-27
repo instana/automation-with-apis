@@ -49,7 +49,10 @@ def run_tests():
                 results[test_file] = "PASSED"
             else:
                 print(f"❌ {test_file} - FAILED")
-                print(f"Error output: {result.stderr}")
+                if result.stdout:
+                    print(result.stdout)
+                if result.stderr:
+                    print(result.stderr)
                 total_failed += 1
                 results[test_file] = "FAILED"
                 
