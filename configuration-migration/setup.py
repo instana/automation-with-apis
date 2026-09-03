@@ -24,7 +24,7 @@ setup(
         "requests>=2.31.0",
         "urllib3>=2.0.0",
         "configparser>=5.3.0",
-        "instana_client>=1.0.0",
+        "instana_client==1.1.1",
         "aiohttp>=3.9.0",
         "aiohttp-retry>=2.8.3",
     ],
