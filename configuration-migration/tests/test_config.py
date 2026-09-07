@@ -175,7 +175,11 @@ events_file_path = test_events.json
             'events_source': None,
             'events_file_path': None,
             'default_owner_id': None,
-            'on_duplicate': None
+            'on_duplicate': None,
+            'max_concurrent': None,
+            'rate_limit': None,
+            'request_timeout': None,
+            'retry_attempts': None,
         })()
         mock_parse_args.return_value = mock_args
         
@@ -216,7 +220,11 @@ url = https://file.target.com
             'events_source': 'file',
             'events_file_path': 'cli_events.json',
             'default_owner_id': 'cli_owner_id',
-            'on_duplicate': 'update'
+            'on_duplicate': 'update',
+            'max_concurrent': None,
+            'rate_limit': None,
+            'request_timeout': None,
+            'retry_attempts': None,
         })()
         mock_parse_args.return_value = mock_args
         
