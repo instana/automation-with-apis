@@ -310,7 +310,7 @@ class EventsMigrator:
                 del event['id']
 
             response = requests.put(
-                f"{self.config.target_url}{self.req_custom_events}/{target_event_id}?allowRestore=true",
+                f"{self.config.target_url}{self.req_custom_events}/{target_event_id}",
                 headers=self.config.get_target_headers(),
                 json=event,
                 verify=self.config.verify_ssl

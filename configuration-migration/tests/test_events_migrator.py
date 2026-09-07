@@ -321,7 +321,7 @@ class TestEventsMigrator:
         
         assert result is True
         mock_put.assert_called_once_with(
-            f"{self.config.target_url}{self.migrator.req_custom_events}/existing_id?allowRestore=true",
+            f"{self.config.target_url}{self.migrator.req_custom_events}/existing_id",
             headers=self.config.get_target_headers(),
             json=event,
             verify=self.config.verify_ssl
