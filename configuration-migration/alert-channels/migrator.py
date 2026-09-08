@@ -32,7 +32,8 @@ class AlertChannelsMigrator:
         """Perform the migration of alert channels.
         
         Returns:
-            Dictionary with counts of source, migrated, and skipped channels
+            Dictionary with counts of source, migrated, updated, skipped_identical,
+            skipped_user, and failed channels
         """
         # Validate configuration before proceeding
         self.config.validate()
@@ -42,64 +43,122 @@ class AlertChannelsMigrator:
         # Get source channels
         source_channels = self._get_source_channels()
         if source_channels is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
         
         # Get target channels to avoid duplicates
         target_channels = self._get_target_channels()
         if target_channels is None:
-            return {"source": len(source_channels), "migrated": 0, "updated": 0, "skipped": 0}
+            return {"source": len(source_channels), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
         
-        # Extract names of existing channels in target system for comparison
-        target_channel_names = [channel.get('name') for channel in target_channels if channel.get('name')]
-        
-        # Counter for migrated channels
+        print(f"Found {len(target_channels)} existing channels in target")
+
+        # Build lookup maps for the target system.
+        # id_map gives an exact match when source and target share the same id
+        # (e.g. a channel that was already migrated previously).
+        # name_map is the fallback for channels that only share a name.
+        target_id_map: Dict[str, Dict[str, Any]] = {
+            c['id']: c for c in target_channels if c.get('id')
+        }
+        target_name_map: Dict[str, Dict[str, Any]] = {
+            c['name']: c for c in target_channels if c.get('name')
+        }
+
+        # Counters
         migrated_count = 0
-        skipped_count = 0
         updated_count = 0
+        skipped_identical_count = 0
+        skipped_unsafe_count = 0
+        skipped_user_count = 0
+        failed_count = 0
         source_channels_count = len(source_channels)
         
         # Process each alert channel from source
         for channel in source_channels:
-            # Extract channel name for comparison
             channel_name = channel.get('name')
-            
+            source_id = channel.get('id')
+
             if not channel_name:
                 print("Skipping channel with no name")
                 continue
-            
-            # Check if channel with same name already exists in target
-            if channel_name in target_channel_names:
-                # Prompt user for choice
+
+            # Resolve the matching target channel.
+            # Prefer an exact id match (same channel, already migrated) over a
+            # name-only match (duplicate name, potentially different channel).
+            target_channel = target_id_map.get(source_id) or target_name_map.get(channel_name)
+
+            if target_channel is not None:
+                # Content-based deduplication: skip silently when channels are identical
+                if self._channels_are_identical(channel, target_channel):
+                    skipped_identical_count += 1
+                    continue
+
+                # Content differs — ask the user what to do
                 choice = self._prompt_for_duplicate_channel(str(channel_name))
                 if choice == 'skip':
                     print(f"Skipping channel '{channel_name}' - already exists in target system")
-                    skipped_count += 1
+                    skipped_user_count += 1
                     continue
-                if choice == 'update':
+                elif choice == 'update':
                     print(f"Updating channel '{channel_name}' - already exists in target system")
-                    if self._update_channel(channel, str(channel_name), target_channels):
+                    if self._update_channel(channel, str(channel_name), target_channel):
                         updated_count += 1
-                        continue
+                    else:
+                        failed_count += 1
+                    continue
                 elif choice == 'cancel':
                     print("Migration cancelled by user")
                     break
                 
-            # Note: We keep the 'id' field as the API seems to require it
-            # Create the channel in target system
+            # Create the channel in the target system
             if self._create_channel(channel, str(channel_name)):
                 migrated_count += 1
+            else:
+                failed_count += 1
         
-        print(f"Migration complete. Found {source_channels_count} source channels, "
-              f"migrated {migrated_count} alert channels, updated {updated_count} channels, "
-              f"skipped {skipped_count} existing channels.")
-        
+        skipped_total = skipped_identical_count + skipped_unsafe_count + skipped_user_count
+        print(
+            f"Migration complete. Found {source_channels_count} source channels, "
+            f"migrated {migrated_count}, updated {updated_count}, "
+            f"skipped {skipped_total} "
+            f"({skipped_identical_count} identical, "
+            f"{skipped_unsafe_count} unsafe, "
+            f"{skipped_user_count} user skipped), "
+            f"failed {failed_count}."
+        )
+
         return {
             "source": source_channels_count,
             "migrated": migrated_count,
             "updated": updated_count,
-            "skipped": skipped_count
+            "skipped_identical": skipped_identical_count,
+            "skipped_unsafe": skipped_unsafe_count,
+            "skipped_user": skipped_user_count,
+            "failed": failed_count,
         }
     
+    def _channels_are_identical(
+        self, source: Dict[str, Any], target: Dict[str, Any]
+    ) -> bool:
+        """Return True when source and target channels have identical content.
+
+        Fields excluded from comparison:
+        - 'id'         — always differs between systems by design
+        - 'rbacTags'   — always stripped before sending to the API
+        - 'instanaUrl' — always overwritten with the target system URL during formatting
+        - 'apiTokenId' — backend-local API token reference; always differs between systems
+
+        Args:
+            source: Channel from the source system
+            target: Channel from the target system
+
+        Returns:
+            True if all meaningful fields are equal, False otherwise
+        """
+        ignore = {'id', 'rbacTags', 'instanaUrl', 'apiTokenId'}
+        source_cmp = {k: v for k, v in source.items() if k not in ignore}
+        target_cmp = {k: v for k, v in target.items() if k not in ignore}
+        return source_cmp == target_cmp
+
     def _format_channel_for_api(self, channel: Dict[str, Any]) -> Dict[str, Any]:
         """Format channel data according to the specific channel type requirements.
         
@@ -112,10 +171,9 @@ class AlertChannelsMigrator:
         # Create a copy to avoid modifying the original
         formatted = channel.copy()
         
-        # Remove fields that shouldn't be sent in creation/update
-        # Note: We keep the 'id' field as the API seems to require it
-        if 'rbacTags' in formatted:
-            del formatted['rbacTags']
+        # Remove fields that must not be sent to the target API.
+        # Note: 'id', 'kind', and 'name' are mandatory in the POST/PUT body per the API spec.
+        formatted.pop('rbacTags', None)
             
         # Get the channel type
         channel_type = formatted.get('kind')
@@ -165,8 +223,8 @@ class AlertChannelsMigrator:
                 formatted['channelId'] = "placeholder_channel_id"
             if 'channelName' not in formatted:
                 formatted['channelName'] = "alerts"
-            if 'instanaUrl' not in formatted:
-                formatted['instanaUrl'] = "https://instana.example.com"
+            # instanaUrl must point to the target system, not the source
+            formatted['instanaUrl'] = self.config.target_url
             if 'serviceUrl' not in formatted:
                 formatted['serviceUrl'] = "https://teams.example.com"
             if 'teamId' not in formatted:
@@ -203,7 +261,11 @@ class AlertChannelsMigrator:
             # Ensure required fields are present
             if 'serviceIntegrationKey' not in formatted:
                 formatted['serviceIntegrationKey'] = "placeholder_integration_key"
-                
+
+        elif channel_type == 'SERVICE_NOW_APPLICATION':
+            # instanaUrl must point to the target system, not the source
+            formatted['instanaUrl'] = self.config.target_url
+
         # For any other channel types, keep as is
         # Add more channel types as needed
         
@@ -306,30 +368,21 @@ class AlertChannelsMigrator:
             True if successful, False otherwise
         """
         try:
-            # Format the channel data for the API
+            # Format the channel data for the API (strips source id and rbacTags)
             formatted_channel = self._format_channel_for_api(channel)
-            
-            # Debug: Print the formatted data being sent
-            print(f"Creating channel '{channel_name}' with data:")
-            print(json.dumps(formatted_channel, indent=2))
-            
-            # Debug: Print headers being sent
-            headers = self.config.get_target_headers()
-            print(f"Request headers: {headers}")
             
             response = requests.post(
                 f"{self.config.target_url}{self.req_alert_channels}",
-                headers=headers,
+                headers=self.config.get_target_headers(),
                 json=formatted_channel,
                 verify=self.config.verify_ssl
             )
             
-            # Debug: Print response details
-            print(f"Response status: {response.status_code}")
-            print(f"Response headers: {dict(response.headers)}")
-            print(f"Response content: {response.text[:500]}...")
-            
-            response.raise_for_status()
+            if not response.ok:
+                print(f"Failed to migrate alert channel '{channel_name}': "
+                      f"HTTP {response.status_code} - {response.text}")
+                return False
+
             new_channel = response.json()
             
             if 'id' in new_channel:
@@ -339,39 +392,35 @@ class AlertChannelsMigrator:
                 print(f"Failed to migrate alert channel '{channel_name}' - no ID returned")
                 return False
         except requests.exceptions.RequestException as e:
-            print(f"Failed to migrate alert channel '{channel_name}'")
-            print(f"Error: {e}")
+            error_body = e.response.text if e.response is not None else ""
+            print(f"Failed to migrate alert channel '{channel_name}': {e}{f' - {error_body}' if error_body else ''}")
             return False
             
-    def _update_channel(self, channel: Dict[str, Any], channel_name: str, target_channels: List[Dict[str, Any]]) -> bool:
+    def _update_channel(self, channel: Dict[str, Any], channel_name: str, target_channel: Dict[str, Any]) -> bool:
         """Update an existing alert channel in the target backend.
         
         Args:
             channel: Alert channel configuration to update
             channel_name: Name of the channel for logging
-            target_channels: List of channels from the target system
+            target_channel: The already-resolved matching channel in the target system
             
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Use the provided target_channels instead of making another API call
-            if not target_channels:
-                print(f"No target channels provided for updating '{channel_name}'")
-                return False
-            
-            # Find the matching channel in target system by name
-            target_channel = next((c for c in target_channels if c.get('name') == channel_name), None)
-            if not target_channel or 'id' not in target_channel:
+            if 'id' not in target_channel:
                 print(f"Failed to find matching target channel for '{channel_name}'")
                 return False
-            
+
             # Use the target channel ID
             target_channel_id = target_channel['id']
             print(f"Updating channel with ID: {target_channel_id}")
             
-            # Format the channel data for the API
+            # Format the channel data for the API (strips rbacTags).
+            # Replace the source id with the target id — the API requires id in the
+            # PUT body and it must match the id in the URL.
             formatted_channel = self._format_channel_for_api(channel)
+            formatted_channel['id'] = target_channel_id
             
             response = requests.put(
                 f"{self.config.target_url}{self.req_alert_channels}/{target_channel_id}",
@@ -379,7 +428,12 @@ class AlertChannelsMigrator:
                 json=formatted_channel,
                 verify=self.config.verify_ssl
             )
-            response.raise_for_status()
+
+            if not response.ok:
+                print(f"Failed to update alert channel '{channel_name}': "
+                      f"HTTP {response.status_code} - {response.text}")
+                return False
+
             updated_channel = response.json()
             
             if 'id' in updated_channel:
@@ -389,8 +443,8 @@ class AlertChannelsMigrator:
                 print(f"Failed to update alert channel '{channel_name}' - no ID returned")
                 return False
         except requests.exceptions.RequestException as e:
-            print(f"Failed to update alert channel '{channel_name}'")
-            print(f"Error: {e}")
+            error_body = e.response.text if e.response is not None else ""
+            print(f"Failed to update alert channel '{channel_name}': {e}{f' - {error_body}' if error_body else ''}")
             return False
 
 # Made with Bob
