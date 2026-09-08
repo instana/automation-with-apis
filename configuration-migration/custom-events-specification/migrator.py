@@ -30,81 +30,97 @@ class EventsMigrator:
     
     def migrate(self) -> Dict[str, int]:
         """Perform the migration of custom events.
-        
+
         Returns:
-            Dictionary with counts of source, migrated, and skipped events
+            Dictionary with counts of source, migrated, updated, skipped, and failed events
         """
         # Validate configuration before proceeding
         self.config.validate()
-        
+
         print("Starting migration of custom event configurations...")
-        
+
         # Get source events
         source_events = self._get_source_events()
         if source_events is None:
-            return {"source": 0, "migrated": 0, "skipped": 0}
-        
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+
         # Get target events to avoid duplicates
         target_events = self._get_target_events()
         if target_events is None:
-            return {"source": len(source_events), "migrated": 0, "skipped": 0}
-        
-        #Extract names of existing events in target system for comparison
-        target_event_names = [event.get('name') for event in target_events if event.get('name')]
-        
-        # Counter for migrated events
+            return {"source": len(source_events), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+
+        # Build a name → event map for the target so we can compare content
+        target_event_map = {e['name']: e for e in target_events if e.get('name')}
+        print(f"Found {len(target_events)} existing events in target")
+
+        # Counters
         migrated_count = 0
-        skipped_count = 0
+        skipped_identical = 0
+        skipped_unsafe = 0
+        skipped_user = 0
         updated_count = 0
+        failed_count = 0
         source_events_count = len(source_events)
-        
+
         # Process each custom event from source
         for event in source_events:
-            # Extract event name for comparison
             event_name = event.get('name')
-            event_query:Any | None = event.get('query')
+            event_query: Any | None = event.get('query')
 
             if not event_name:
                 print("Skipping event with no name")
                 continue
 
             if event_query and isinstance(event_query, str) and ".id" in event_query:
-                skipped_count += 1
+                skipped_unsafe += 1
                 print(f"Skipping event '{event_name}' - query contains id reference from source system")
                 continue
-            
+
             # Check if event with same name already exists in target
-            if event_name in target_event_names:
-                # Prompt user for choice
+            if event_name in target_event_map:
+                target_event = target_event_map[event_name]
+                if self._events_are_equal(event, target_event):
+                    print(f"Skipping event '{event_name}' - identical in target")
+                    skipped_identical += 1
+                    continue
                 choice = self._prompt_for_duplicate_event(str(event_name))
                 if choice == 'skip':
                     print(f"Skipping event '{event_name}' - already exists in target system")
-                    skipped_count += 1
+                    skipped_user += 1
                     continue
                 if choice == 'update':
                     print(f"Updating event '{event_name}' - already exists in target system")
                     if self._update_event(event, str(event_name), target_events):
                         updated_count += 1
-                        continue
+                    else:
+                        failed_count += 1
+                    continue
                 elif choice == 'cancel':
                     print("Migration cancelled by user")
                     break
-                
+
             if 'id' in event:
                 del event['id']
-            # Create the event in target system
             if self._create_event(event, str(event_name)):
                 migrated_count += 1
-        
+            else:
+                failed_count += 1
+
+        skipped_total = skipped_identical + skipped_unsafe + skipped_user
         print(f"Migration complete. Found {source_events_count} source events, "
-              f"migrated {migrated_count} custom events, updated {updated_count} events, "
-              f"skipped {skipped_count} existing events.")
-        
+              f"migrated {migrated_count}, updated {updated_count}, "
+              f"skipped {skipped_total} ({skipped_identical} identical, "
+              f"{skipped_unsafe} unsafe query, {skipped_user} user skipped), "
+              f"failed {failed_count}.")
+
         return {
             "source": source_events_count,
             "migrated": migrated_count,
             "updated": updated_count,
-            "skipped": skipped_count
+            "skipped_identical": skipped_identical,
+            "skipped_unsafe": skipped_unsafe,
+            "skipped_user": skipped_user,
+            "failed": failed_count,
         }
     
     def _get_source_events(self) -> Optional[List[Dict[str, Any]]]:
@@ -166,6 +182,30 @@ class EventsMigrator:
             print(f"Error retrieving target events: {e}")
             return None
     
+    # Fields present in the target GET response that are assigned by the target
+    # system and must be excluded when comparing source vs target content.
+    _TARGET_ONLY_FIELDS = frozenset({
+        'id', 'lastUpdated', 'validVersion', 'deleted',
+        'migrated', 'applicationAlertConfigId', 'infraAlertConfigId',
+    })
+
+    def _events_are_equal(self, source: Dict[str, Any], target: Dict[str, Any]) -> bool:
+        """Return True if source and target represent the same event content.
+
+        Strips target-system-only fields (id, lastUpdated, etc.) from the
+        target before comparing, since those are never present in the source.
+
+        Args:
+            source: Event dict from the source system
+            target: Event dict from the target system (includes server fields)
+
+        Returns:
+            True if all content fields are identical
+        """
+        target_content = {k: v for k, v in target.items() if k not in self._TARGET_ONLY_FIELDS}
+        source_content = {k: v for k, v in source.items() if k not in self._TARGET_ONLY_FIELDS}
+        return source_content == target_content
+
     def _prompt_for_duplicate_event(self, event_name: str) -> str:
         """Prompt user for action when a duplicate event is found.
         
@@ -195,11 +235,15 @@ class EventsMigrator:
     
     def _create_event(self, event: Dict[str, Any], event_name: str) -> bool:
         """Create a custom event in the target backend.
-        
+
+        After creation, if the source event was disabled, the target event is
+        also disabled via the dedicated /disable sub-endpoint, since the API
+        ignores the `enabled` field in the POST body.
+
         Args:
             event: Event configuration to create
             event_name: Name of the event for logging
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -212,26 +256,36 @@ class EventsMigrator:
             )
             response.raise_for_status()
             new_event = response.json()
-            
-            if 'id' in new_event:
-                print(f"Migrated custom event '{event_name}' (Target ID: {new_event['id']})")
-                return True
-            else:
+
+            if 'id' not in new_event:
                 print(f"Failed to migrate custom event '{event_name}' - no ID returned")
                 return False
+
+            print(f"Migrated custom event '{event_name}' (Target ID: {new_event['id']})")
+
+            # Disable in target if source event was explicitly disabled
+            if event.get('enabled') is False:
+                self._disable_event(new_event['id'], event_name)
+
+            return True
         except requests.exceptions.RequestException as e:
             print(f"Failed to migrate custom event '{event_name}'")
             print(f"Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"API response: {e.response.text}")
             return False
-            
+
     def _update_event(self, event: Dict[str, Any], event_name: str, target_events: List[Dict[str, Any]]) -> bool:
         """Update an existing custom event in the target backend.
-        
+
+        After updating, if the source event was disabled, the target event is
+        also disabled via the dedicated /disable sub-endpoint.
+
         Args:
             event: Event configuration to update
             event_name: Name of the event for logging
             target_events: List of events from the target system
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -240,21 +294,21 @@ class EventsMigrator:
             if not target_events:
                 print(f"No target events provided for updating '{event_name}'")
                 return False
-            
+
             # Find the matching event in target system by name
             target_event = next((e for e in target_events if e.get('name') == event_name), None)
             if not target_event or 'id' not in target_event:
                 print(f"Failed to find matching target event for '{event_name}'")
                 return False
-            
+
             # Use the target event ID
             target_event_id = target_event['id']
             print(f"Updating event with ID: {target_event_id}")
-            
+
             # Remove source ID if present and use target ID
             if 'id' in event:
                 del event['id']
-            
+
             response = requests.put(
                 f"{self.config.target_url}{self.req_custom_events}/{target_event_id}",
                 headers=self.config.get_target_headers(),
@@ -263,16 +317,47 @@ class EventsMigrator:
             )
             response.raise_for_status()
             updated_event = response.json()
-            
-            if 'id' in updated_event:
-                print(f"Updated custom event '{event_name}' (Target ID: {updated_event['id']})")
-                return True
-            else:
+
+            if 'id' not in updated_event:
                 print(f"Failed to update custom event '{event_name}' - no ID returned")
                 return False
+
+            print(f"Updated custom event '{event_name}' (Target ID: {updated_event['id']})")
+
+            # Disable in target if source event was explicitly disabled
+            if event.get('enabled') is False:
+                self._disable_event(updated_event['id'], event_name)
+
+            return True
         except requests.exceptions.RequestException as e:
             print(f"Failed to update custom event '{event_name}'")
             print(f"Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"API response: {e.response.text}")
             return False
+
+    def _disable_event(self, event_id: str, event_name: str) -> None:
+        """Disable a custom event in the target backend.
+
+        Called after create/update when the source event has enabled=False,
+        because the API ignores the `enabled` field in POST/PUT bodies.
+
+        Args:
+            event_id: Target system ID of the event to disable
+            event_name: Name of the event for logging
+        """
+        try:
+            response = requests.post(
+                f"{self.config.target_url}{self.req_custom_events}/{event_id}/disable",
+                headers=self.config.get_target_headers(),
+                verify=self.config.verify_ssl
+            )
+            response.raise_for_status()
+            print(f"Disabled custom event '{event_name}' (Target ID: {event_id})")
+        except requests.exceptions.RequestException as e:
+            print(f"Warning: Failed to disable custom event '{event_name}' (Target ID: {event_id})")
+            print(f"Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"API response: {e.response.text}")
 
 # Made with Bob

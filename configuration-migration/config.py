@@ -221,14 +221,18 @@ class Config:
     
     def validate(self) -> None:
         """Validate that the configuration is complete.
-        
+
+        Source credentials are only required when fetching from the API.
+        In file mode the source is never contacted, so they are skipped.
+
         Raises:
             ValueError: If any required configuration is missing
         """
-        if not self.source_token:
-            raise ValueError("Source API token is required")
-        if not self.source_url:
-            raise ValueError("Source backend URL is required")
+        if self.events_source.lower() != "file":
+            if not self.source_token:
+                raise ValueError("Source API token is required")
+            if not self.source_url:
+                raise ValueError("Source backend URL is required")
         if not self.target_token:
             raise ValueError("Target API token is required")
         if not self.target_url:
