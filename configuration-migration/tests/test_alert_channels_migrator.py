@@ -168,16 +168,38 @@ class TestAlertChannelsMigrator:
         target = {"name": "C", "kind": "EMAIL", "emails": ["a@b.com"], "id": "tgt-99"}
         assert self.migrator._channels_are_identical(source, target) is True
 
-    def test_channels_are_identical_ignores_instana_url(self):
-        """Channels differing only in instanaUrl are considered identical — it is always rewritten."""
+    def test_channels_are_identical_stale_instana_url_triggers_update(self):
+        """Target with wrong instanaUrl (e.g. from an old run) is not identical — must be updated."""
         source = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": "https://source.io", "channelName": "ch"}
         target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": "<invalid instanaUrl>", "channelName": "ch"}
+        assert self.migrator._channels_are_identical(source, target) is False
+
+    def test_channels_are_identical_correct_instana_url_is_ignored(self):
+        """Target with instanaUrl already set to target_url is treated as identical."""
+        source = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": "https://source.io", "channelName": "ch"}
+        target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": self.config.target_url, "channelName": "ch"}
         assert self.migrator._channels_are_identical(source, target) is True
 
     def test_channels_are_identical_ignores_api_token_id(self):
-        """Channels differing only in apiTokenId are considered identical — it is backend-local."""
+        """Channels differing only in apiTokenId are considered identical — it is invalidated on migration."""
         source = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "apiTokenId": "src-token", "channelName": "ch"}
-        target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "apiTokenId": "tgt-token", "channelName": "ch"}
+        target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "apiTokenId": "<invalid-reconfigure-on-target>", "channelName": "ch"}
+        assert self.migrator._channels_are_identical(source, target) is True
+
+    def test_channels_are_identical_ignores_service_now_credentials(self):
+        """SERVICE_NOW_APPLICATION channels differing only in invalidated credential/tenant fields are identical."""
+        source = {
+            "name": "SN", "kind": "SERVICE_NOW_APPLICATION",
+            "unit": "demous", "tenant": "instana",
+            "username": "admin", "password": "secret",
+            "serviceNowUrl": "https://example.service-now.com",
+        }
+        target = {
+            "name": "SN", "kind": "SERVICE_NOW_APPLICATION",
+            "unit": "<invalid-reconfigure-on-target>", "tenant": "<invalid-reconfigure-on-target>",
+            "username": "<invalid-reconfigure-on-target>", "password": "<invalid-reconfigure-on-target>",
+            "serviceNowUrl": "https://example.service-now.com",
+        }
         assert self.migrator._channels_are_identical(source, target) is True
 
     def test_channels_are_identical_false_content_differs(self):
@@ -185,6 +207,40 @@ class TestAlertChannelsMigrator:
         source = {"name": "C", "kind": "EMAIL", "emails": ["a@b.com"], "id": "src-1"}
         target = {"name": "C", "kind": "EMAIL", "emails": ["z@z.com"], "id": "tgt-99"}
         assert self.migrator._channels_are_identical(source, target) is False
+
+    def test_is_unsafe_service_now(self):
+        """SERVICE_NOW_APPLICATION is always unsafe — target validates credentials at save time."""
+        channel = {"kind": "SERVICE_NOW_APPLICATION", "name": "SN"}
+        assert self.migrator._is_unsafe_to_migrate(channel) is True
+
+    def test_is_unsafe_false_for_other_types(self):
+        """All other channel types are considered safe to migrate."""
+        for kind in ("EMAIL", "SLACK", "WEB_HOOK", "BIDIRECTIONAL_SLACK",
+                     "BIDIRECTIONAL_MS_TEAMS", "GOOGLE_CHAT", "OFFICE_365",
+                     "OPS_GENIE", "PAGER_DUTY"):
+            channel = {"kind": kind, "name": "C"}
+            assert self.migrator._is_unsafe_to_migrate(channel) is False, \
+                f"Expected {kind} to be safe but _is_unsafe_to_migrate returned True"
+
+    def test_needs_instana_url_fix_stale_url(self):
+        """Target with a wrong instanaUrl needs a fix."""
+        target = {"instanaUrl": "<invalid instanaUrl>", "kind": "BIDIRECTIONAL_MS_TEAMS"}
+        assert self.migrator._needs_instana_url_fix(target) is True
+
+    def test_needs_instana_url_fix_source_url(self):
+        """Target with the source system URL needs a fix."""
+        target = {"instanaUrl": "https://demous-instana.instana.io", "kind": "BIDIRECTIONAL_MS_TEAMS"}
+        assert self.migrator._needs_instana_url_fix(target) is True
+
+    def test_needs_instana_url_fix_already_correct(self):
+        """Target with instanaUrl already set to target_url does not need a fix."""
+        target = {"instanaUrl": self.config.target_url, "kind": "BIDIRECTIONAL_MS_TEAMS"}
+        assert self.migrator._needs_instana_url_fix(target) is False
+
+    def test_needs_instana_url_fix_no_instana_url(self):
+        """Target without instanaUrl (e.g. EMAIL channel) does not need a fix."""
+        target = {"kind": "EMAIL", "emails": ["a@b.com"]}
+        assert self.migrator._needs_instana_url_fix(target) is False
 
     def test_format_channel_preserves_id(self):
         """_format_channel_for_api must keep the id field — it is mandatory in the POST/PUT body."""
@@ -204,37 +260,37 @@ class TestAlertChannelsMigrator:
         self.migrator._format_channel_for_api(channel)
         assert "id" in channel
 
-    def test_format_bidirectional_ms_teams_rewrites_instana_url(self):
-        """BIDIRECTIONAL_MS_TEAMS: instanaUrl must be overwritten with the target URL."""
+    def test_format_bidirectional_ms_teams_rewrites_instana_url_and_invalidates_api_token(self):
+        """BIDIRECTIONAL_MS_TEAMS: instanaUrl rewritten to target URL; apiTokenId invalidated."""
         channel = {
             "id": "src-1", "kind": "BIDIRECTIONAL_MS_TEAMS", "name": "T",
-            "instanaUrl": "https://source.instana.io",  # source URL — must be replaced
-            "apiTokenId": "tok", "channelId": "cid", "channelName": "ch",
+            "instanaUrl": "https://source.instana.io",
+            "apiTokenId": "real-source-token",
+            "channelId": "cid", "channelName": "ch",
             "serviceUrl": "https://smba.example.com", "teamId": "tid",
             "teamName": "team", "tenantId": "tnid", "tenantName": "tn",
         }
         formatted = self.migrator._format_channel_for_api(channel)
         assert formatted["instanaUrl"] == self.config.target_url
+        assert formatted["apiTokenId"] == "<invalid-reconfigure-on-target>"
 
-    def test_format_service_now_rewrites_instana_url_when_null(self):
-        """SERVICE_NOW_APPLICATION: instanaUrl must be set to the target URL even when null in source."""
+    def test_format_service_now_invalidates_credentials_and_tenant_fields(self):
+        """SERVICE_NOW_APPLICATION: instanaUrl rewritten; unit, tenant, username, password invalidated."""
         channel = {
             "id": "src-2", "kind": "SERVICE_NOW_APPLICATION", "name": "SN",
-            "instanaUrl": None,  # null in source — must be replaced
+            "instanaUrl": None,
             "serviceNowUrl": "https://example.service-now.com",
+            "unit": "demous",
+            "tenant": "instana",
+            "username": "admin",
+            "password": "secret123",
         }
         formatted = self.migrator._format_channel_for_api(channel)
         assert formatted["instanaUrl"] == self.config.target_url
-
-    def test_format_service_now_rewrites_instana_url_when_set_to_source(self):
-        """SERVICE_NOW_APPLICATION: instanaUrl must be overwritten even when already set to source URL."""
-        channel = {
-            "id": "src-3", "kind": "SERVICE_NOW_APPLICATION", "name": "SN",
-            "instanaUrl": "https://source.instana.io",  # source URL — must be replaced
-            "serviceNowUrl": "https://example.service-now.com",
-        }
-        formatted = self.migrator._format_channel_for_api(channel)
-        assert formatted["instanaUrl"] == self.config.target_url
+        assert formatted["unit"] == "<invalid-reconfigure-on-target>"
+        assert formatted["tenant"] == "<invalid-reconfigure-on-target>"
+        assert formatted["username"] == "<invalid-reconfigure-on-target>"
+        assert formatted["password"] == "<invalid-reconfigure-on-target>"
 
     @patch('migrator.requests.post')
     def test_create_channel_success(self, mock_post):
@@ -437,6 +493,43 @@ class TestAlertChannelsMigrator:
         assert result["skipped_identical"] == 1
         mock_create.assert_not_called()
         mock_update.assert_not_called()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_unsafe_channel_increments_skipped_unsafe(self, mock_create, mock_get_target, mock_get_source):
+        """SERVICE_NOW_APPLICATION channels are skipped as unsafe without attempting a create."""
+        source_channels = [{"name": "KashSNOW", "kind": "SERVICE_NOW_APPLICATION"}]
+
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = []
+
+        result = self.migrator.migrate()
+
+        assert result["skipped_unsafe"] == 1
+        assert result["failed"] == 0
+        mock_create.assert_not_called()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_update_channel')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_stale_instana_url_warns_and_skips(self, mock_create, mock_update, mock_get_target, mock_get_source):
+        """Channels where the target has a stale instanaUrl are warned and skipped —
+        instanaUrl is read-only on the target backend so updating would loop forever."""
+        source_channels = [{"id": "A", "name": "KashTest", "kind": "BIDIRECTIONAL_MS_TEAMS", "channelName": "ch"}]
+        target_channels = [{"id": "A", "name": "KashTest", "kind": "BIDIRECTIONAL_MS_TEAMS",
+                            "channelName": "ch", "instanaUrl": "<invalid instanaUrl>"}]
+
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = target_channels
+
+        result = self.migrator.migrate()
+
+        assert result["skipped_identical"] == 1
+        assert result["updated"] == 0
+        mock_update.assert_not_called()
+        mock_create.assert_not_called()
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
     @patch.object(AlertChannelsMigrator, '_get_target_channels')
