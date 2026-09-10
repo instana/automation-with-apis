@@ -10,6 +10,29 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from cli import main
 
 
+def _mock_args(**kwargs):
+    """Helper to create mock argparse Namespace-like object with defaults."""
+    defaults = {
+        'command': None,
+        'config_file': None,
+        'source_token': None,
+        'source_url': None,
+        'target_token': None,
+        'target_url': None,
+        'no_verify_ssl': False,
+        'events_source': None,
+        'events_file_path': None,
+        'default_owner_id': None,
+        'on_duplicate': None,
+        'max_concurrent': None,
+        'rate_limit': None,
+        'request_timeout': None,
+        'retry_attempts': None,
+    }
+    defaults.update(kwargs)
+    return type('MockArgs', (), defaults)()
+
+
 class TestCLI:
     """Test cases for the CLI module."""
 
@@ -128,7 +151,7 @@ class TestCLI:
         mock_config_from_args.return_value = MagicMock()
 
         mock_migrator = MagicMock()
-        mock_migrator.migrate.return_value = {"source": 2, "migrated": 2, "updated": 0, "skipped": 0}
+        mock_migrator.migrate.return_value = {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "failed": 0}
         mock_class = MagicMock(return_value=mock_migrator)
 
         mock_module = MagicMock()
