@@ -487,3 +487,244 @@ class TestAlertConfigsMigrator:
         
         assert formatted["integrationIds"] == ["tgt_channel_id"]
         assert formatted["eventFilteringConfiguration"]["ruleIds"] == ["tgt_event_id"]
+
+    def test_format_config_raises_when_no_filter_selectors(self):
+        """Validation rejects configs where all four filter fields are empty/absent."""
+        config = {
+            "alertName": "Empty Filter",
+            "eventFilteringConfiguration": {
+                "query": None,
+                "ruleIds": [],
+                "eventTypes": [],
+                "applicationAlertConfigIds": []
+            }
+        }
+        with pytest.raises(ValueError, match="at least one must be set"):
+            self.migrator._format_config_for_api(config)
+
+    def test_format_config_accepts_query_only_filter(self):
+        """Validation passes when only a query string is present (no array selectors)."""
+        config = {
+            "alertName": "Query Filter",
+            "eventFilteringConfiguration": {
+                "query": "entity.type:host",
+                "ruleIds": [],
+                "eventTypes": [],
+                "applicationAlertConfigIds": []
+            }
+        }
+        result = self.migrator._format_config_for_api(config)
+        assert result["eventFilteringConfiguration"]["query"] == "entity.type:host"
+
+    def test_format_config_skips_validation_when_disabled(self):
+        """validate=False must not raise even when all filter fields are empty."""
+        config = {
+            "alertName": "Empty Filter",
+            "eventFilteringConfiguration": {
+                "query": None,
+                "ruleIds": [],
+                "eventTypes": [],
+                "applicationAlertConfigIds": []
+            }
+        }
+        # Should not raise
+        result = self.migrator._format_config_for_api(config, validate=False)
+        assert result["alertName"] == "Empty Filter"
+
+    def test_format_config_warns_on_unmatched_integration_ids(self, capsys):
+        """Warning is printed for integrationIds not found in the channel map."""
+        self.migrator._channel_map_fetched = True
+        self.migrator.channel_id_map = {}  # fetched but empty → no matches
+        config = {
+            "alertName": "Alert",
+            "integrationIds": ["unknown_channel_id"],
+            "eventFilteringConfiguration": {"eventTypes": ["INCIDENT"]}
+        }
+        result = self.migrator._format_config_for_api(config)
+        assert result["integrationIds"] == []
+        captured = capsys.readouterr()
+        assert "integrationId(s) not found" in captured.out
+
+    def test_format_config_warns_on_unmatched_rule_ids(self, capsys):
+        """Warning is printed for ruleIds not found in the event map."""
+        self.migrator._event_map_fetched = True
+        self.migrator.event_id_map = {}  # fetched but empty → no matches
+        config = {
+            "alertName": "Alert",
+            "eventFilteringConfiguration": {
+                "ruleIds": ["unknown_rule_id"],
+                "eventTypes": ["INCIDENT"]
+            }
+        }
+        result = self.migrator._format_config_for_api(config)
+        assert result["eventFilteringConfiguration"]["ruleIds"] == []
+        captured = capsys.readouterr()
+        assert "ruleId(s) not found" in captured.out
+
+    def test_format_config_passthrough_when_map_not_fetched(self):
+        """IDs are passed through unchanged when the channel/event map was never fetched."""
+        # Default state: _channel_map_fetched=False, _event_map_fetched=False
+        config = {
+            "alertName": "Alert",
+            "integrationIds": ["some_channel_id"],
+            "eventFilteringConfiguration": {
+                "ruleIds": ["some_rule_id"],
+                "eventTypes": ["INCIDENT"]
+            }
+        }
+        result = self.migrator._format_config_for_api(config)
+        assert result["integrationIds"] == ["some_channel_id"]
+        assert result["eventFilteringConfiguration"]["ruleIds"] == ["some_rule_id"]
+
+    def test_create_config_skips_on_empty_filter(self):
+        """_create_config returns False (without HTTP call) when filter is empty."""
+        config = {
+            "alertName": "Bad Config",
+            "eventFilteringConfiguration": {}
+        }
+        with patch('migrator.requests.put') as mock_put:
+            result = self.migrator._create_config(config, "Bad Config")
+        assert result is False
+        mock_put.assert_not_called()
+
+    def test_update_config_skips_on_empty_filter(self):
+        """_update_config returns False (without HTTP call) when filter is empty."""
+        config = {
+            "alertName": "Bad Config",
+            "eventFilteringConfiguration": {}
+        }
+        with patch('migrator.requests.put') as mock_put:
+            result = self.migrator._update_config(config, "existing_id", "Bad Config")
+        assert result is False
+        mock_put.assert_not_called()
+
+    def test_update_config_uses_target_id_in_body(self):
+        """PUT body must contain target_id, not the source id (bug fix validation)."""
+        config = {
+            "id": "source_system_id",
+            "alertName": "Test Config",
+            "eventFilteringConfiguration": {"eventTypes": ["INCIDENT"]}
+        }
+        target_id = "target_system_id"
+
+        with patch('migrator.requests.put') as mock_put:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"id": target_id}
+            mock_put.return_value = mock_response
+
+            result = self.migrator._update_config(config, target_id, "Test Config")
+
+        assert result is True
+        sent_body = mock_put.call_args[1]['json']
+        assert sent_body['id'] == target_id, "PUT body must carry target_id, not source id"
+        call_url = mock_put.call_args[0][0]
+        assert call_url.endswith(f"/{target_id}")
+
+    def test_configs_are_equal_eventTypes_order_insensitive(self):
+        """Different ordering of eventTypes must not trigger a false mismatch."""
+        efc_src = {"eventTypes": ["warning", "critical"]}
+        efc_tgt = {"eventTypes": ["critical", "warning"]}
+        source = {"alertName": "Alert", "muteUntil": 0, "eventFilteringConfiguration": efc_src}
+        target = {"alertName": "Alert", "muteUntil": 0, "eventFilteringConfiguration": efc_tgt}
+        assert self.migrator._configs_are_equal(source, target) is True
+
+    def test_configs_are_equal_excludes_server_only_fields(self):
+        """lastUpdated, invalid, alertChannelNames, applicationNames must be ignored."""
+        efc = {"eventTypes": ["INCIDENT"]}
+        source = {"alertName": "Alert", "muteUntil": 0, "eventFilteringConfiguration": efc}
+        target = {
+            "alertName": "Alert", "muteUntil": 0, "eventFilteringConfiguration": efc,
+            "lastUpdated": 9999999, "invalid": True,
+            "alertChannelNames": ["Slack"], "applicationNames": ["MyApp"]
+        }
+        assert self.migrator._configs_are_equal(source, target) is True
+
+    def test_configs_are_equal_missing_alert_name_returns_false(self):
+        """Missing alertName raises ValueError internally; _configs_are_equal must return False."""
+        source = {"muteUntil": 0, "eventFilteringConfiguration": {"eventTypes": ["INCIDENT"]}}
+        target = {"muteUntil": 0, "eventFilteringConfiguration": {"eventTypes": ["INCIDENT"]}}
+        assert self.migrator._configs_are_equal(source, target) is False
+
+    @patch.object(AlertConfigsMigrator, '_get_source_configs', return_value=None)
+    def test_migrate_returns_zeros_when_source_fails(self, _mock):
+        """migrate returns zero-filled dict when source fetch fails."""
+        result = self.migrator.migrate()
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+
+    @patch.object(AlertConfigsMigrator, '_get_source_configs')
+    @patch.object(AlertConfigsMigrator, '_get_target_configs', return_value=None)
+    def test_migrate_returns_zeros_when_target_fails(self, _mock_tgt, mock_src):
+        """migrate returns zero-filled dict (with source count) when target fetch fails."""
+        mock_src.return_value = [
+            {"alertName": "Config 1", "eventFilteringConfiguration": {}},
+            {"alertName": "Config 2", "eventFilteringConfiguration": {}}
+        ]
+        result = self.migrator.migrate()
+        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+
+    @patch.object(AlertConfigsMigrator, '_get_source_configs')
+    @patch.object(AlertConfigsMigrator, '_get_target_configs')
+    @patch.object(AlertConfigsMigrator, '_create_config', return_value=False)
+    def test_migrate_increments_failed_on_create_failure(self, _mock_create, mock_tgt, mock_src):
+        """Failed _create_config calls must increment failed_count."""
+        mock_src.return_value = [
+            {"alertName": "Config 1", "eventFilteringConfiguration": {}},
+        ]
+        mock_tgt.return_value = []
+        result = self.migrator.migrate()
+        assert result["failed"] == 1
+        assert result["migrated"] == 0
+
+    @patch.object(AlertConfigsMigrator, '_get_source_configs')
+    @patch.object(AlertConfigsMigrator, '_get_target_configs')
+    @patch.object(AlertConfigsMigrator, '_prompt_for_duplicate_config', return_value='update')
+    @patch.object(AlertConfigsMigrator, '_update_config', return_value=False)
+    def test_migrate_increments_failed_on_update_failure(self, _mock_upd, _mock_prompt, mock_tgt, mock_src):
+        """Failed _update_config calls must increment failed_count."""
+        efc = {"eventTypes": ["INCIDENT"]}
+        mock_src.return_value = [{"alertName": "Config 1", "muteUntil": 0, "eventFilteringConfiguration": efc}]
+        # Different muteUntil so equality check fails and we reach the prompt
+        mock_tgt.return_value = [{"id": "tgt1", "alertName": "Config 1", "muteUntil": 3600, "eventFilteringConfiguration": efc}]
+        result = self.migrator.migrate()
+        assert result["failed"] == 1
+        assert result["updated"] == 0
+
+    @patch.object(AlertConfigsMigrator, '_get_source_configs')
+    @patch.object(AlertConfigsMigrator, '_get_target_configs')
+    @patch.object(AlertConfigsMigrator, '_prompt_for_duplicate_config')
+    @patch.object(AlertConfigsMigrator, '_create_config')
+    def test_migrate_matches_by_id_first(self, mock_create, mock_prompt, mock_tgt, mock_src):
+        """A source config whose ID exists in the target is matched by ID, not name."""
+        efc = {"eventTypes": ["INCIDENT"]}
+        source_configs = [
+            {"id": "shared_id", "alertName": "Config A", "muteUntil": 0, "eventFilteringConfiguration": efc},
+        ]
+        # Target has same ID but a different name — should still be found by ID
+        target_configs = [
+            {"id": "shared_id", "alertName": "Config B", "muteUntil": 0, "eventFilteringConfiguration": efc},
+        ]
+        mock_src.return_value = source_configs
+        mock_tgt.return_value = target_configs
+        mock_prompt.return_value = "skip"
+
+        result = self.migrator.migrate()
+
+        # Matched by ID → duplicate handling triggered (skipped_user), not a new create
+        assert result["skipped_user"] == 1
+        mock_create.assert_not_called()
+
+    @patch('migrator.requests.get', side_effect=Exception("network failure"))
+    def test_get_channel_id_map_returns_empty_on_exception(self, _mock):
+        """Exception during channel map fetch returns empty dict and prints warning."""
+        self.migrator._get_channel_id_map = lambda: AlertConfigsMigrator._get_channel_id_map(self.migrator)
+        result = self.migrator._get_channel_id_map()
+        assert result == {}
+        assert self.migrator._channel_map_fetched is False
+
+    @patch('migrator.requests.get', side_effect=Exception("network failure"))
+    def test_get_event_id_map_returns_empty_on_exception(self, _mock):
+        """Exception during event map fetch returns empty dict and prints warning."""
+        self.migrator._get_event_id_map = lambda: AlertConfigsMigrator._get_event_id_map(self.migrator)
+        result = self.migrator._get_event_id_map()
+        assert result == {}
+        assert self.migrator._event_map_fetched is False
