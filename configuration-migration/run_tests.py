@@ -22,6 +22,7 @@ def run_tests():
     # Test files to run
     test_files = [
         'tests/test_config.py',
+        'tests/test_cli.py',
         'tests/test_events_migrator.py',
         'tests/test_alert_channels_migrator.py',
         'tests/test_alert_configs_migrator.py',

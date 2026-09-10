@@ -113,13 +113,9 @@ def main():
             from migrator import AlertChannelsMigrator
             migrator = AlertChannelsMigrator(config)
             result = migrator.migrate()
-            
-            # Exit with success if at least one channel was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                # Exit with error code if no channels were migrated
-                sys.exit(1)
+
+            # Exit with error only when one or more channels failed
+            sys.exit(1 if result["failed"] > 0 else 0)
                 
         elif args.command == 'configs':
             # Import and run the alert configurations migrator

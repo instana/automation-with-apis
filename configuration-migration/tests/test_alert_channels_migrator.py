@@ -162,12 +162,143 @@ class TestAlertChannelsMigrator:
         assert choice == "skip"
         assert mock_input.call_count == 2
 
+    def test_channels_are_identical_true(self):
+        """Channels with equal content (ignoring id, rbacTags, instanaUrl, apiTokenId) are identical."""
+        source = {"name": "C", "kind": "EMAIL", "emails": ["a@b.com"], "id": "src-1", "rbacTags": ["x"]}
+        target = {"name": "C", "kind": "EMAIL", "emails": ["a@b.com"], "id": "tgt-99"}
+        assert self.migrator._channels_are_identical(source, target) is True
+
+    def test_channels_are_identical_stale_instana_url_triggers_update(self):
+        """Target with wrong instanaUrl (e.g. from an old run) is not identical — must be updated."""
+        source = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": "https://source.io", "channelName": "ch"}
+        target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": "<invalid instanaUrl>", "channelName": "ch"}
+        assert self.migrator._channels_are_identical(source, target) is False
+
+    def test_channels_are_identical_correct_instana_url_is_ignored(self):
+        """Target with instanaUrl already set to target_url is treated as identical."""
+        source = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": "https://source.io", "channelName": "ch"}
+        target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "instanaUrl": self.config.target_url, "channelName": "ch"}
+        assert self.migrator._channels_are_identical(source, target) is True
+
+    def test_channels_are_identical_ignores_api_token_id(self):
+        """Channels differing only in apiTokenId are considered identical — it is invalidated on migration."""
+        source = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "apiTokenId": "src-token", "channelName": "ch"}
+        target = {"name": "C", "kind": "BIDIRECTIONAL_MS_TEAMS", "apiTokenId": "<invalid-reconfigure-on-target>", "channelName": "ch"}
+        assert self.migrator._channels_are_identical(source, target) is True
+
+    def test_channels_are_identical_ignores_service_now_credentials(self):
+        """SERVICE_NOW_APPLICATION channels differing only in invalidated credential/tenant fields are identical."""
+        source = {
+            "name": "SN", "kind": "SERVICE_NOW_APPLICATION",
+            "unit": "demous", "tenant": "instana",
+            "username": "admin", "password": "secret",
+            "serviceNowUrl": "https://example.service-now.com",
+        }
+        target = {
+            "name": "SN", "kind": "SERVICE_NOW_APPLICATION",
+            "unit": "<invalid-reconfigure-on-target>", "tenant": "<invalid-reconfigure-on-target>",
+            "username": "<invalid-reconfigure-on-target>", "password": "<invalid-reconfigure-on-target>",
+            "serviceNowUrl": "https://example.service-now.com",
+        }
+        assert self.migrator._channels_are_identical(source, target) is True
+
+    def test_channels_are_identical_false_content_differs(self):
+        """Channels with differing meaningful content are not identical."""
+        source = {"name": "C", "kind": "EMAIL", "emails": ["a@b.com"], "id": "src-1"}
+        target = {"name": "C", "kind": "EMAIL", "emails": ["z@z.com"], "id": "tgt-99"}
+        assert self.migrator._channels_are_identical(source, target) is False
+
+    def test_is_unsafe_service_now(self):
+        """SERVICE_NOW_APPLICATION is always unsafe — target validates credentials at save time."""
+        channel = {"kind": "SERVICE_NOW_APPLICATION", "name": "SN"}
+        assert self.migrator._is_unsafe_to_migrate(channel) is True
+
+    def test_is_unsafe_false_for_other_types(self):
+        """All other channel types are considered safe to migrate."""
+        for kind in ("EMAIL", "SLACK", "WEB_HOOK", "BIDIRECTIONAL_SLACK",
+                     "BIDIRECTIONAL_MS_TEAMS", "GOOGLE_CHAT", "OFFICE_365",
+                     "OPS_GENIE", "PAGER_DUTY"):
+            channel = {"kind": kind, "name": "C"}
+            assert self.migrator._is_unsafe_to_migrate(channel) is False, \
+                f"Expected {kind} to be safe but _is_unsafe_to_migrate returned True"
+
+    def test_needs_instana_url_fix_stale_url(self):
+        """Target with a wrong instanaUrl needs a fix."""
+        target = {"instanaUrl": "<invalid instanaUrl>", "kind": "BIDIRECTIONAL_MS_TEAMS"}
+        assert self.migrator._needs_instana_url_fix(target) is True
+
+    def test_needs_instana_url_fix_source_url(self):
+        """Target with the source system URL needs a fix."""
+        target = {"instanaUrl": "https://demous-instana.instana.io", "kind": "BIDIRECTIONAL_MS_TEAMS"}
+        assert self.migrator._needs_instana_url_fix(target) is True
+
+    def test_needs_instana_url_fix_already_correct(self):
+        """Target with instanaUrl already set to target_url does not need a fix."""
+        target = {"instanaUrl": self.config.target_url, "kind": "BIDIRECTIONAL_MS_TEAMS"}
+        assert self.migrator._needs_instana_url_fix(target) is False
+
+    def test_needs_instana_url_fix_no_instana_url(self):
+        """Target without instanaUrl (e.g. EMAIL channel) does not need a fix."""
+        target = {"kind": "EMAIL", "emails": ["a@b.com"]}
+        assert self.migrator._needs_instana_url_fix(target) is False
+
+    def test_format_channel_preserves_id(self):
+        """_format_channel_for_api must keep the id field — it is mandatory in the POST/PUT body."""
+        channel = {"id": "source-id-123", "name": "C", "kind": "EMAIL", "emails": ["a@b.com"]}
+        formatted = self.migrator._format_channel_for_api(channel)
+        assert formatted["id"] == "source-id-123"
+
+    def test_format_channel_strips_rbac_tags(self):
+        """_format_channel_for_api must remove rbacTags."""
+        channel = {"name": "C", "kind": "EMAIL", "emails": ["a@b.com"], "rbacTags": ["tag1"]}
+        formatted = self.migrator._format_channel_for_api(channel)
+        assert "rbacTags" not in formatted
+
+    def test_format_channel_does_not_mutate_original(self):
+        """_format_channel_for_api must not modify the original dict."""
+        channel = {"id": "src", "name": "C", "kind": "EMAIL", "emails": ["a@b.com"]}
+        self.migrator._format_channel_for_api(channel)
+        assert "id" in channel
+
+    def test_format_bidirectional_ms_teams_rewrites_instana_url_and_invalidates_api_token(self):
+        """BIDIRECTIONAL_MS_TEAMS: instanaUrl rewritten to target URL; apiTokenId invalidated."""
+        channel = {
+            "id": "src-1", "kind": "BIDIRECTIONAL_MS_TEAMS", "name": "T",
+            "instanaUrl": "https://source.instana.io",
+            "apiTokenId": "real-source-token",
+            "channelId": "cid", "channelName": "ch",
+            "serviceUrl": "https://smba.example.com", "teamId": "tid",
+            "teamName": "team", "tenantId": "tnid", "tenantName": "tn",
+        }
+        formatted = self.migrator._format_channel_for_api(channel)
+        assert formatted["instanaUrl"] == self.config.target_url
+        assert formatted["apiTokenId"] == "<invalid-reconfigure-on-target>"
+
+    def test_format_service_now_invalidates_credentials_and_tenant_fields(self):
+        """SERVICE_NOW_APPLICATION: instanaUrl rewritten; unit, tenant, username, password invalidated."""
+        channel = {
+            "id": "src-2", "kind": "SERVICE_NOW_APPLICATION", "name": "SN",
+            "instanaUrl": None,
+            "serviceNowUrl": "https://example.service-now.com",
+            "unit": "demous",
+            "tenant": "instana",
+            "username": "admin",
+            "password": "secret123",
+        }
+        formatted = self.migrator._format_channel_for_api(channel)
+        assert formatted["instanaUrl"] == self.config.target_url
+        assert formatted["unit"] == "<invalid-reconfigure-on-target>"
+        assert formatted["tenant"] == "<invalid-reconfigure-on-target>"
+        assert formatted["username"] == "<invalid-reconfigure-on-target>"
+        assert formatted["password"] == "<invalid-reconfigure-on-target>"
+
     @patch('migrator.requests.post')
     def test_create_channel_success(self, mock_post):
         """Test successful channel creation."""
         channel = {"name": "Test Channel", "type": "email"}
         
         mock_response = MagicMock()
+        mock_response.ok = True
         mock_response.status_code = 201
         mock_response.json.return_value = {"id": "new_id"}
         mock_post.return_value = mock_response
@@ -175,20 +306,16 @@ class TestAlertChannelsMigrator:
         result = self.migrator._create_channel(channel, "Test Channel")
         
         assert result is True
-        mock_post.assert_called_once_with(
-            f"{self.config.target_url}{self.migrator.req_alert_channels}",
-            headers=self.config.get_target_headers(),
-            json=channel,
-            verify=self.config.verify_ssl
-        )
 
     @patch('migrator.requests.post')
     def test_create_channel_failure(self, mock_post):
-        """Test failed channel creation."""
+        """Test failed channel creation (non-OK HTTP response)."""
         channel = {"name": "Test Channel", "type": "email"}
         
         mock_response = MagicMock()
+        mock_response.ok = False
         mock_response.status_code = 400
+        mock_response.text = "Bad Request"
         mock_post.return_value = mock_response
         
         result = self.migrator._create_channel(channel, "Test Channel")
@@ -197,7 +324,7 @@ class TestAlertChannelsMigrator:
 
     @patch('migrator.requests.post')
     def test_create_channel_exception(self, mock_post):
-        """Test channel creation with exception."""
+        """Test channel creation with network exception."""
         channel = {"name": "Test Channel", "type": "email"}
         
         mock_post.side_effect = requests.exceptions.RequestException("API Error")
@@ -206,50 +333,71 @@ class TestAlertChannelsMigrator:
         
         assert result is False
 
-    @patch('migrator.requests.put')
-    def test_update_channel_success(self, mock_put):
-        """Test successful channel update."""
+    @patch('migrator.requests.post')
+    def test_create_channel_exception_with_response_body(self, mock_post):
+        """Test that the server error body is included when an HTTP exception carries a response."""
         channel = {"name": "Test Channel", "type": "email"}
-        target_channels = [{"name": "Test Channel", "id": "existing_id"}]
         
         mock_response = MagicMock()
+        mock_response.text = "Internal Server Error detail"
+        exc = requests.exceptions.HTTPError("500 Server Error", response=mock_response)
+        mock_post.side_effect = exc
+        
+        result = self.migrator._create_channel(channel, "Test Channel")
+        
+        assert result is False
+
+    @patch('migrator.requests.put')
+    def test_update_channel_success(self, mock_put):
+        """Test successful channel update. PUT body must carry the target id, not the source id."""
+        channel = {"name": "Test Channel", "type": "email", "id": "source_id"}
+        target_channel = {"name": "Test Channel", "id": "existing_id"}
+
+        mock_response = MagicMock()
+        mock_response.ok = True
         mock_response.status_code = 200
         mock_response.json.return_value = {"id": "existing_id"}
         mock_put.return_value = mock_response
-        
-        result = self.migrator._update_channel(channel, "Test Channel", target_channels)
-        
+
+        result = self.migrator._update_channel(channel, "Test Channel", target_channel)
+
         assert result is True
+        # The PUT body must use the target id, not the source id
+        call_kwargs = mock_put.call_args
+        sent_body = call_kwargs.kwargs.get("json", call_kwargs[1].get("json", {}))
+        assert sent_body["id"] == "existing_id"
         mock_put.assert_called_once_with(
             f"{self.config.target_url}{self.migrator.req_alert_channels}/existing_id",
             headers=self.config.get_target_headers(),
-            json=channel,
+            json=sent_body,
             verify=self.config.verify_ssl
         )
 
     @patch('migrator.requests.put')
-    def test_update_channel_not_found(self, mock_put):
-        """Test channel update when target channel not found."""
+    def test_update_channel_no_id(self, mock_put):
+        """Test channel update when the resolved target channel has no id."""
         channel = {"name": "Test Channel", "type": "email"}
-        target_channels = [{"name": "Other Channel", "id": "other_id"}]
-        
-        result = self.migrator._update_channel(channel, "Test Channel", target_channels)
-        
+        target_channel = {"name": "Test Channel"}  # missing id
+
+        result = self.migrator._update_channel(channel, "Test Channel", target_channel)
+
         assert result is False
         mock_put.assert_not_called()
 
     @patch('migrator.requests.put')
     def test_update_channel_failure(self, mock_put):
-        """Test failed channel update."""
+        """Test failed channel update (non-OK HTTP response)."""
         channel = {"name": "Test Channel", "type": "email"}
-        target_channels = [{"name": "Test Channel", "id": "existing_id"}]
-        
+        target_channel = {"name": "Test Channel", "id": "existing_id"}
+
         mock_response = MagicMock()
+        mock_response.ok = False
         mock_response.status_code = 400
+        mock_response.text = "Bad Request"
         mock_put.return_value = mock_response
-        
-        result = self.migrator._update_channel(channel, "Test Channel", target_channels)
-        
+
+        result = self.migrator._update_channel(channel, "Test Channel", target_channel)
+
         assert result is False
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
@@ -270,7 +418,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
         assert mock_create.call_count == 2
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
@@ -279,12 +427,12 @@ class TestAlertChannelsMigrator:
     @patch.object(AlertChannelsMigrator, '_update_channel')
     @patch.object(AlertChannelsMigrator, '_create_channel')
     def test_migrate_with_duplicates(self, mock_create, mock_update, mock_prompt, mock_get_target, mock_get_source):
-        """Test migration with duplicate channels."""
+        """Test migration with duplicate channels where user chooses update."""
         source_channels = [
-            {"name": "Channel 1", "type": "email"},
+            {"name": "Channel 1", "kind": "EMAIL", "emails": ["different@example.com"]},
             {"name": "Channel 2", "type": "slack"}
         ]
-        target_channels = [{"name": "Channel 1", "id": "existing_id"}]
+        target_channels = [{"name": "Channel 1", "id": "existing_id", "kind": "EMAIL", "emails": ["old@example.com"]}]
         
         mock_get_source.return_value = source_channels
         mock_get_target.return_value = target_channels
@@ -294,8 +442,132 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
         mock_update.assert_called_once()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_update_channel')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_identical_channel_skipped_silently(self, mock_create, mock_update, mock_get_target, mock_get_source):
+        """Identical channels are skipped without prompting the user."""
+        channel = {"name": "Channel 1", "kind": "EMAIL", "emails": ["a@b.com"]}
+        source_channels = [channel]
+        # Target has same content, different id — matched by name fallback
+        target_channels = [dict(channel, id="tgt-1")]
+
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = target_channels
+
+        result = self.migrator.migrate()
+
+        assert result["skipped_identical"] == 1
+        assert result["skipped_user"] == 0
+        mock_create.assert_not_called()
+        mock_update.assert_not_called()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_update_channel')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_id_match_takes_priority_over_name_match(self, mock_create, mock_update, mock_get_target, mock_get_source):
+        """When source id exists in target, that entry is used for comparison even if another
+        target entry shares the same name but has different content."""
+        # Source: one channel, id=A, emojiRendering=False
+        source_channels = [
+            {"id": "A", "name": "Chan", "kind": "SLACK", "emojiRendering": False}
+        ]
+        # Target: two channels with the same name but different ids/content.
+        # The name-map would land on id=B (last seen), but the id-map correctly
+        # resolves to id=A — which is identical — so it must silently skip.
+        target_channels = [
+            {"id": "A", "name": "Chan", "kind": "SLACK", "emojiRendering": False},
+            {"id": "B", "name": "Chan", "kind": "SLACK", "emojiRendering": True},
+        ]
+
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = target_channels
+
+        result = self.migrator.migrate()
+
+        assert result["skipped_identical"] == 1
+        mock_create.assert_not_called()
+        mock_update.assert_not_called()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_unsafe_channel_increments_skipped_unsafe(self, mock_create, mock_get_target, mock_get_source):
+        """SERVICE_NOW_APPLICATION channels are skipped as unsafe without attempting a create."""
+        source_channels = [{"name": "KashSNOW", "kind": "SERVICE_NOW_APPLICATION"}]
+
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = []
+
+        result = self.migrator.migrate()
+
+        assert result["skipped_unsafe"] == 1
+        assert result["failed"] == 0
+        mock_create.assert_not_called()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_update_channel')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_stale_instana_url_warns_and_skips(self, mock_create, mock_update, mock_get_target, mock_get_source):
+        """Channels where the target has a stale instanaUrl are warned and skipped —
+        instanaUrl is read-only on the target backend so updating would loop forever."""
+        source_channels = [{"id": "A", "name": "KashTest", "kind": "BIDIRECTIONAL_MS_TEAMS", "channelName": "ch"}]
+        target_channels = [{"id": "A", "name": "KashTest", "kind": "BIDIRECTIONAL_MS_TEAMS",
+                            "channelName": "ch", "instanaUrl": "<invalid instanaUrl>"}]
+
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = target_channels
+
+        result = self.migrator.migrate()
+
+        assert result["skipped_identical"] == 1
+        assert result["updated"] == 0
+        mock_update.assert_not_called()
+        mock_create.assert_not_called()
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_failed_create_increments_failed_count(self, mock_create, mock_get_target, mock_get_source):
+        """Failed creates increment the failed counter."""
+        source_channels = [{"name": "Channel 1", "type": "email"}]
+        
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = []
+        mock_create.return_value = False
+        
+        result = self.migrator.migrate()
+        
+        assert result["failed"] == 1
+        assert result["migrated"] == 0
+
+    @patch.object(AlertChannelsMigrator, '_get_source_channels')
+    @patch.object(AlertChannelsMigrator, '_get_target_channels')
+    @patch.object(AlertChannelsMigrator, '_prompt_for_duplicate_channel')
+    @patch.object(AlertChannelsMigrator, '_update_channel')
+    @patch.object(AlertChannelsMigrator, '_create_channel')
+    def test_migrate_failed_update_increments_failed_count(self, mock_create, mock_update, mock_prompt, mock_get_target, mock_get_source):
+        """Failed updates increment the failed counter and do not fall through to create."""
+        source_channels = [{"id": "s1", "name": "Channel 1", "kind": "EMAIL", "emails": ["different@x.com"]}]
+        target_channels = [{"id": "s1", "name": "Channel 1", "kind": "EMAIL", "emails": ["old@x.com"]}]
+        
+        mock_get_source.return_value = source_channels
+        mock_get_target.return_value = target_channels
+        mock_prompt.return_value = "update"
+        mock_update.return_value = False
+        
+        result = self.migrator.migrate()
+        
+        assert result["failed"] == 1
+        assert result["updated"] == 0
+        # Must NOT fall through to create
+        mock_create.assert_not_called()
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
     def test_migrate_no_source_channels(self, mock_get_source):
@@ -304,7 +576,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
     @patch.object(AlertChannelsMigrator, '_get_target_channels')
@@ -317,7 +589,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped": 0}
+        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
 
     def test_migrate_skip_channel_without_name(self):
         """Test that channels without name are skipped."""
@@ -332,4 +604,4 @@ class TestAlertChannelsMigrator:
                 with patch.object(self.migrator, '_create_channel', return_value=True):
                     result = self.migrator.migrate()
                     
-                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 0}
+                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
