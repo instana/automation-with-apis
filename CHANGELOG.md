@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Maintenance Configurations Migration**: migrate maintenance windows between
+  backends, including one-time and recurring schedules with their recurrence
+  rules and time zones, scope queries, and tag filter expressions. Uses the v2
+  API and preserves source IDs, so identity is exact rather than name-based and
+  re-runs are idempotent. Adds the `maintenance-configs` CLI subcommand.
 - Initial open source release
 - Comprehensive documentation and contributing guidelines
 - Modern Python project configuration with pyproject.toml

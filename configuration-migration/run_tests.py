@@ -26,7 +26,8 @@ def run_tests():
         'tests/test_events_migrator.py',
         'tests/test_alert_channels_migrator.py',
         'tests/test_alert_configs_migrator.py',
-        'tests/test_custom_dashboards_migrator.py'
+        'tests/test_custom_dashboards_migrator.py',
+        'tests/test_maintenance_configs_migrator.py'
     ]
     
     total_passed = 0
@@ -49,7 +50,10 @@ def run_tests():
                 results[test_file] = "PASSED"
             else:
                 print(f"❌ {test_file} - FAILED")
-                print(f"Error output: {result.stderr}")
+                if result.stdout:
+                    print(result.stdout)
+                if result.stderr:
+                    print(result.stderr)
                 total_failed += 1
                 results[test_file] = "FAILED"
                 
