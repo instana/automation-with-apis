@@ -1,4 +1,4 @@
-"""Command-line interface for Custom Events, Alert Channels, and Alert Configurations Migrator."""
+"""Command-line interface for Custom Events, Alert Channels, Alert Configurations, Custom Dashboards, and Website Configs Migrator."""
 
 import sys
 import argparse
@@ -83,6 +83,18 @@ def main():
         maintenance_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a maintenance configuration already exists in the target (default: ask)')
         maintenance_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
 
+        # Website configs migrator
+        website_configs_parser = subparsers.add_parser('website-configs', help='Migrate website monitoring configurations')
+        website_configs_parser.add_argument('--config-file', help='Path to configuration file')
+        website_configs_parser.add_argument('--source-token', help='API token for source backend')
+        website_configs_parser.add_argument('--source-url', help='URL for source backend')
+        website_configs_parser.add_argument('--target-token', help='API token for target backend')
+        website_configs_parser.add_argument('--target-url', help='URL for target backend')
+        website_configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        website_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for website configs (api or file)')
+        website_configs_parser.add_argument('--events-file-path', help='Path to the website configs JSON file (when using file source)')
+        website_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate website is found (default: ask)')
+
         # Parse arguments
         args = parser.parse_args()
         
@@ -150,7 +162,7 @@ def main():
             from migrator import CustomDashboardsMigrator
             migrator = CustomDashboardsMigrator(config)
             result = migrator.migrate()
-            
+
             # Exit with success if at least one dashboard was migrated
             if result["migrated"] > 0 or result["updated"] > 0:
                 sys.exit(0)
@@ -170,6 +182,20 @@ def main():
                 sys.exit(0)
             else:
                 # Exit with error code if no configurations were migrated
+                sys.exit(1)
+
+        elif args.command == 'website-configs':
+            # Import and run the website configs migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'website-configs'))
+            from migrator import WebsiteConfigMigrator
+            migrator = WebsiteConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one website was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                # Exit with error code if no websites were migrated
                 sys.exit(1)
 
     except ValueError as e:

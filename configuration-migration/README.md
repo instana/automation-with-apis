@@ -40,6 +40,11 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 
 See [maintenance-configs/README.md](maintenance-configs/README.md) for details.
 
+### 5. Website Configurations
+- **Website monitoring configurations** and endpoints
+- **Name matching** and duplicate detection (skip, update, cancel)
+- **Source-to-target ID mapping**
+
 ## Installation
 
 ### Prerequisites
@@ -186,6 +191,31 @@ reading as well as writing. Note that `--on-duplicate update` overwrites the
 target's windows: since maintenance windows suppress alerting, confirm the
 source is authoritative before running it against production.
 
+#### Website Configurations Migration
+
+```bash
+# Basic usage with command line arguments
+uv run cli.py website-configs --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com \
+                              --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com
+
+# Using a configuration file
+uv run cli.py website-configs --config-file config.ini
+
+# Skip existing website configurations in target
+uv run cli.py website-configs --on-duplicate skip --config-file config.ini
+
+# Update existing website configurations in target
+uv run cli.py website-configs --on-duplicate update --config-file config.ini
+
+# Use website configs from a local file instead of fetching from API
+uv run cli.py website-configs --events-source file --events-file-path source_website_configs.json \
+                              --target-token TOKEN --target-url URL
+
+# Fetch website configs from API but save to a file for future use
+uv run cli.py website-configs --events-source api --events-file-path my_website_configs.json \
+                              --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+```
+
 ### Configuration File Format
 
 Create a configuration file (e.g., `config.ini`) with the following format:
@@ -244,9 +274,11 @@ configuration-migration/
 │   └── migrator.py              # Alert channels migrator
 ├── alert-configs/
 │   └── migrator.py              # Alert configurations migrator
-└── maintenance-configs/
-    ├── migrator.py              # Maintenance configurations migrator
-    └── README.md                # Maintenance configurations guide
+├── maintenance-configs/
+│   ├── migrator.py              # Maintenance configurations migrator
+│   └── README.md                # Maintenance configurations guide
+└── website-configs/
+    └── migrator.py              # Website configurations migrator
 ```
 
 ## Features
@@ -333,6 +365,20 @@ You can now use a local JSON file as the source for custom events or alert chann
 ]
 ```
 
+#### Example Website Configurations JSON file format:
+```json
+[
+  {
+    "id": "website-config-1",
+    "name": "Production Web App"
+  },
+  {
+    "id": "website-config-2",
+    "name": "Customer Portal"
+  }
+]
+```
+
 ## Development
 
 ### Setting Up Development Environment
@@ -401,6 +447,7 @@ tests/
 ├── test_alert_configs_migrator.py        # Alert configs migrator tests
 ├── test_custom_dashboards_migrator.py    # Custom dashboards migrator tests
 ├── test_maintenance_configs_migrator.py  # Maintenance configs migrator tests
+├── test_website_configs_migrator.py      # Website configs migrator tests
 ├── test_cli.py                           # CLI interface tests
 ├── conftest.py                           # Shared test fixtures
 └── __init__.py                           # Package initialization
