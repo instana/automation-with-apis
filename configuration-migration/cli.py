@@ -183,8 +183,8 @@ def main():
             else:
                 # Exit with error code if no configurations were migrated
                 sys.exit(1)
-        
 
+        elif args.command == 'website-configs':
             # Import and run the website configs migrator
             sys.path.append(os.path.join(os.path.dirname(__file__), 'website-configs'))
             from migrator import WebsiteConfigMigrator
