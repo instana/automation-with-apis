@@ -1,3 +1,4 @@
+import copy
 import json
 import uuid
 import requests
@@ -30,11 +31,11 @@ class AlertConfigsMigrator:
 
         source_configs = self._get_source_configs()
         if source_configs is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
         target_configs = self._get_target_configs()
         if target_configs is None:
-            return {"source": len(source_configs), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+            return {"source": len(source_configs), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
         target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
         target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}
@@ -43,7 +44,12 @@ class AlertConfigsMigrator:
         updated_count = 0
         skipped_identical = 0
         skipped_user = 0
+        skipped_invalid = 0
         failed_count = 0
+
+        # Cache per-name duplicate decisions so the prompt only fires once when
+        # multiple source configs share the same alertName.
+        name_decision_cache: Dict[str, str] = {}
 
         for config in source_configs:
             config_name = config.get('alertName')
@@ -64,15 +70,23 @@ class AlertConfigsMigrator:
                     skipped_identical += 1
                     continue
 
-                choice = self._prompt_for_duplicate_config(str(config_name))
+                # Reuse a previous decision for this name if one was already made.
+                choice = name_decision_cache.get(config_name)
+                if choice is None:
+                    choice = self._prompt_for_duplicate_config(str(config_name))
+                    name_decision_cache[config_name] = choice
+
                 if choice == 'skip':
                     print(f"Skipping alert configuration '{config_name}' - already exists in target system")
                     skipped_user += 1
                     continue
                 elif choice == 'update':
                     print(f"Updating alert configuration '{config_name}' - already exists in target system")
-                    if self._update_config(config, target_config.get('id'), str(config_name)):
+                    result = self._update_config(config, target_config.get('id'), str(config_name))
+                    if result is True:
                         updated_count += 1
+                    elif result is None:
+                        skipped_invalid += 1
                     else:
                         failed_count += 1
                     continue
@@ -80,17 +94,20 @@ class AlertConfigsMigrator:
                     print("Migration cancelled by user")
                     break
 
-            if self._create_config(config, str(config_name)):
+            result = self._create_config(config, str(config_name))
+            if result is True:
                 migrated_count += 1
+            elif result is None:
+                skipped_invalid += 1
             else:
                 failed_count += 1
 
         source_count = len(source_configs)
-        skipped_total = skipped_identical + skipped_user
+        skipped_total = skipped_identical + skipped_user + skipped_invalid
         print(f"Migration complete. Found {source_count} source alert configurations, "
               f"migrated {migrated_count}, updated {updated_count}, "
               f"skipped {skipped_total} ({skipped_identical} identical, "
-              f"{skipped_user} user skipped), "
+              f"{skipped_user} user skipped, {skipped_invalid} invalid), "
               f"failed {failed_count}.")
 
         return {
@@ -99,6 +116,7 @@ class AlertConfigsMigrator:
             "updated": updated_count,
             "skipped_identical": skipped_identical,
             "skipped_user": skipped_user,
+            "skipped_invalid": skipped_invalid,
             "failed": failed_count,
         }
 
@@ -155,7 +173,8 @@ class AlertConfigsMigrator:
             else:
                 print("Invalid choice. Please enter 's', 'u', or 'c'.")
 
-    def _create_config(self, config: Dict[str, Any], config_name: str) -> bool:
+    def _create_config(self, config: Dict[str, Any], config_name: str) -> Optional[bool]:
+        """Returns True on success, None on validation skip, False on API error."""
         try:
             formatted_config = self._format_config_for_api(config)
             response = requests.put(
@@ -170,7 +189,7 @@ class AlertConfigsMigrator:
             return True
         except ValueError as e:
             print(f"Skipping alert configuration '{config_name}': {e}")
-            return False
+            return None
         except requests.exceptions.RequestException as e:
             print(f"Failed to migrate alert configuration '{config_name}'")
             print(f"Error: {e}")
@@ -178,7 +197,8 @@ class AlertConfigsMigrator:
                 print(f"API response: {e.response.text}")
             return False
 
-    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> bool:
+    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
+        """Returns True on success, None on validation skip, False on API error."""
         try:
             formatted_config = self._format_config_for_api(config)
             formatted_config['id'] = target_id
@@ -194,7 +214,7 @@ class AlertConfigsMigrator:
             return True
         except ValueError as e:
             print(f"Skipping alert configuration '{config_name}': {e}")
-            return False
+            return None
         except requests.exceptions.RequestException as e:
             print(f"Failed to update alert configuration '{config_name}'")
             print(f"Error: {e}")
@@ -203,7 +223,7 @@ class AlertConfigsMigrator:
             return False
 
     def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
-        formatted = config.copy()
+        formatted = copy.deepcopy(config)
         
         # Remove read-only fields that shouldn't be sent in API requests
         read_only_fields = ['lastUpdated', 'invalid', 'alertChannelNames', 'applicationNames']
@@ -218,15 +238,10 @@ class AlertConfigsMigrator:
         if 'alertName' not in formatted:
             raise ValueError("Alert configuration must have an 'alertName' field")
         
-        # Ensure eventFilteringConfiguration is properly structured
+        # Ensure eventFilteringConfiguration is present (fields will be
+        # cleaned up to None/omitted after remapping, below)
         if 'eventFilteringConfiguration' not in formatted:
-            formatted['eventFilteringConfiguration'] = {
-                "query": None,
-                "ruleIds": [],
-                "eventTypes": [],
-                "applicationAlertConfigIds": [],
-                "validVersion": 1
-            }
+            formatted['eventFilteringConfiguration'] = {}
         
         # Ensure customPayloadFields is an array
         if 'customPayloadFields' not in formatted:
@@ -271,28 +286,42 @@ class AlertConfigsMigrator:
                 for item in filtering_config['ruleIds']:
                     if item in self.event_id_map:
                         remapped_rules.append(self.event_id_map[item])
-                    elif not self._event_map_fetched:
-                        # Map fetch was never attempted — pass through as-is
-                        remapped_rules.append(item)
                     else:
-                        # Map was fetched but this ID had no match — drop it
-                        unmatched_rules.append(item)
+                        # No match found — pass through the original source ID as-is
+                        remapped_rules.append(item)
+                        if self._event_map_fetched:
+                            unmatched_rules.append(item)
                 if unmatched_rules and validate:
                     alert_name = formatted.get('alertName', 'unknown')
-                    print(f"  Warning: '{alert_name}' — {len(unmatched_rules)} ruleId(s) not found in target and will be omitted: {unmatched_rules}")
-                filtering_config['ruleIds'] = remapped_rules
+                    print(f"  Warning: '{alert_name}' — {len(unmatched_rules)} ruleId(s) not found in target, using source IDs: {unmatched_rules}")
+                filtering_config['ruleIds'] = remapped_rules if remapped_rules else None
+
+            # Normalise empty lists to null — the target API requires these
+            # fields to be present but accepts null for unpopulated ones.
+            for list_field in ('eventTypes', 'applicationAlertConfigIds'):
+                val = filtering_config.get(list_field)
+                if isinstance(val, list) and not val:
+                    filtering_config[list_field] = None
+
+            # Ensure validVersion is present.
+            if 'validVersion' not in filtering_config:
+                filtering_config['validVersion'] = 1
+
+            # Normalise null/empty query.
+            if not filtering_config.get('query'):
+                filtering_config['query'] = None
 
         # Validate that the event filtering configuration has at least one selector.
         # Only applied when preparing an outbound payload, not during comparison.
         if validate:
             efc = formatted.get('eventFilteringConfiguration', {})
-            query = efc.get('query') or ''
             rule_ids = efc.get('ruleIds') or []
             event_types = efc.get('eventTypes') or []
             app_alert_ids = efc.get('applicationAlertConfigIds') or []
-            if not query and not rule_ids and not event_types and not app_alert_ids:
+
+            if not rule_ids and not event_types and not app_alert_ids:
                 raise ValueError(
-                    "eventFilteringConfiguration has no query, ruleIds, eventTypes, or applicationAlertConfigIds — "
+                    "eventFilteringConfiguration has no ruleIds, eventTypes, or applicationAlertConfigIds — "
                     "at least one must be set"
                 )
 

@@ -182,7 +182,11 @@ class TestAlertConfigsMigrator:
         expected_config = {
             'id': 'test_id',
             'alertName': 'Test Config',
-            'eventFilteringConfiguration': {'eventTypes': ['INCIDENT']},
+            'eventFilteringConfiguration': {
+                'eventTypes': ['INCIDENT'],
+                'validVersion': 1,
+                'query': None,
+            },
             'customPayloadFields': [],
             'integrationIds': [],
             'muteUntil': 0,
@@ -198,7 +202,7 @@ class TestAlertConfigsMigrator:
     @patch('migrator.requests.put')
     def test_create_config_failure(self, mock_put):
         """Test failed config creation."""
-        config = {"id": "test_id", "alertName": "Test Config", "eventFilteringConfiguration": {}}
+        config = {"id": "test_id", "alertName": "Test Config", "eventFilteringConfiguration": {"eventTypes": ["INCIDENT"]}}
         
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("400 Bad Request")
@@ -256,7 +260,11 @@ class TestAlertConfigsMigrator:
         expected_config = {
             'id': 'existing_id',
             'alertName': 'Test Config',
-            'eventFilteringConfiguration': {'eventTypes': ['INCIDENT']},
+            'eventFilteringConfiguration': {
+                'eventTypes': ['INCIDENT'],
+                'validVersion': 1,
+                'query': None,
+            },
             'customPayloadFields': [],
             'integrationIds': [],
             'muteUntil': 0,
@@ -272,7 +280,7 @@ class TestAlertConfigsMigrator:
     @patch('migrator.requests.put')
     def test_update_config_failure(self, mock_put):
         """Test failed config update."""
-        config = {"id": "test_id", "alertName": "Test Config", "eventFilteringConfiguration": {}}
+        config = {"id": "test_id", "alertName": "Test Config", "eventFilteringConfiguration": {"eventTypes": ["INCIDENT"]}}
         config_id = "existing_id"
         
         mock_response = MagicMock()
@@ -313,7 +321,7 @@ class TestAlertConfigsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         assert mock_create.call_count == 2
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
@@ -324,10 +332,10 @@ class TestAlertConfigsMigrator:
     def test_migrate_with_duplicates(self, mock_create, mock_update, mock_prompt, mock_get_target, mock_get_source):
         """Test migration with duplicate configs."""
         source_configs = [
-            {"id": "config1_id", "alertName": "Config 1", "eventFilteringConfiguration": {}},
-            {"id": "config2_id", "alertName": "Config 2", "eventFilteringConfiguration": {}}
+            {"id": "config1_id", "alertName": "Config 1", "eventFilteringConfiguration": {"eventTypes": ["incident"]}},
+            {"id": "config2_id", "alertName": "Config 2", "eventFilteringConfiguration": {"eventTypes": ["warning"]}}
         ]
-        target_configs = [{"alertName": "Config 1", "id": "existing_id"}]
+        target_configs = [{"alertName": "Config 1", "id": "existing_id", "eventFilteringConfiguration": {"eventTypes": ["critical"]}}]
         
         mock_get_source.return_value = source_configs
         mock_get_target.return_value = target_configs
@@ -337,7 +345,7 @@ class TestAlertConfigsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         mock_update.assert_called_once()
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
@@ -346,10 +354,10 @@ class TestAlertConfigsMigrator:
     def test_migrate_skip_duplicates(self, mock_prompt, mock_get_target, mock_get_source):
         """Test migration with skipped duplicates."""
         source_configs = [
-            {"alertName": "Config 1", "eventFilteringConfiguration": {}},
-            {"alertName": "Config 2", "eventFilteringConfiguration": {}}
+            {"alertName": "Config 1", "eventFilteringConfiguration": {"eventTypes": ["incident"]}},
+            {"alertName": "Config 2", "eventFilteringConfiguration": {"eventTypes": ["warning"]}}
         ]
-        target_configs = [{"alertName": "Config 1", "id": "existing_id"}]
+        target_configs = [{"alertName": "Config 1", "id": "existing_id", "eventFilteringConfiguration": {"eventTypes": ["critical"]}}]
         
         mock_get_source.return_value = source_configs
         mock_get_target.return_value = target_configs
@@ -358,7 +366,7 @@ class TestAlertConfigsMigrator:
         with patch.object(self.migrator, '_create_config', return_value=True):
             result = self.migrator.migrate()
             
-            assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_user": 1, "failed": 0}
+            assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_user": 1, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
     @patch.object(AlertConfigsMigrator, '_get_target_configs')
@@ -366,10 +374,10 @@ class TestAlertConfigsMigrator:
     def test_migrate_cancel(self, mock_prompt, mock_get_target, mock_get_source):
         """Test migration cancellation."""
         source_configs = [
-            {"alertName": "Config 1", "eventFilteringConfiguration": {}},
-            {"alertName": "Config 2", "eventFilteringConfiguration": {}}
+            {"alertName": "Config 1", "eventFilteringConfiguration": {"eventTypes": ["incident"]}},
+            {"alertName": "Config 2", "eventFilteringConfiguration": {"eventTypes": ["warning"]}}
         ]
-        target_configs = [{"alertName": "Config 1", "id": "existing_id"}]
+        target_configs = [{"alertName": "Config 1", "id": "existing_id", "eventFilteringConfiguration": {"eventTypes": ["critical"]}}]
         
         mock_get_source.return_value = source_configs
         mock_get_target.return_value = target_configs
@@ -377,7 +385,7 @@ class TestAlertConfigsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_migrate_skip_config_without_name(self):
         """Test that configs without alertName are skipped."""
@@ -392,7 +400,7 @@ class TestAlertConfigsMigrator:
                 with patch.object(self.migrator, '_create_config', return_value=True):
                     result = self.migrator.migrate()
                     
-                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_configs_are_equal(self):
         """Test checking if source and target configs are content-equal."""
@@ -436,7 +444,7 @@ class TestAlertConfigsMigrator:
 
         # Config 1 is identical (should auto-skip)
         # Config 2 is new (should migrate)
-        assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 1, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 1, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         mock_create.assert_called_once_with(source_configs[1], "Config 2")
 
     @patch('migrator.requests.get')
@@ -486,7 +494,8 @@ class TestAlertConfigsMigrator:
         formatted = self.migrator._format_config_for_api(config)
         
         assert formatted["integrationIds"] == ["tgt_channel_id"]
-        assert formatted["eventFilteringConfiguration"]["ruleIds"] == ["tgt_event_id"]
+        # unmapped_event_id has no match in the event map — it is passed through as-is
+        assert formatted["eventFilteringConfiguration"]["ruleIds"] == ["tgt_event_id", "unmapped_event_id"]
 
     def test_format_config_raises_when_no_filter_selectors(self):
         """Validation rejects configs where all four filter fields are empty/absent."""
@@ -503,7 +512,8 @@ class TestAlertConfigsMigrator:
             self.migrator._format_config_for_api(config)
 
     def test_format_config_accepts_query_only_filter(self):
-        """Validation passes when only a query string is present (no array selectors)."""
+        """query-only configs are rejected — the target API requires a non-empty
+        eventTypes, ruleIds, or applicationAlertConfigIds alongside query."""
         config = {
             "alertName": "Query Filter",
             "eventFilteringConfiguration": {
@@ -513,8 +523,8 @@ class TestAlertConfigsMigrator:
                 "applicationAlertConfigIds": []
             }
         }
-        result = self.migrator._format_config_for_api(config)
-        assert result["eventFilteringConfiguration"]["query"] == "entity.type:host"
+        with pytest.raises(ValueError, match="no ruleIds, eventTypes"):
+            self.migrator._format_config_for_api(config)
 
     def test_format_config_skips_validation_when_disabled(self):
         """validate=False must not raise even when all filter fields are empty."""
@@ -557,7 +567,8 @@ class TestAlertConfigsMigrator:
             }
         }
         result = self.migrator._format_config_for_api(config)
-        assert result["eventFilteringConfiguration"]["ruleIds"] == []
+        # Unmatched ruleIds are passed through as-is (original source ID preserved)
+        assert result["eventFilteringConfiguration"]["ruleIds"] == ["unknown_rule_id"]
         captured = capsys.readouterr()
         assert "ruleId(s) not found" in captured.out
 
@@ -577,25 +588,25 @@ class TestAlertConfigsMigrator:
         assert result["eventFilteringConfiguration"]["ruleIds"] == ["some_rule_id"]
 
     def test_create_config_skips_on_empty_filter(self):
-        """_create_config returns False (without HTTP call) when filter is empty."""
+        """_create_config returns None (without HTTP call) when filter is empty."""
         config = {
             "alertName": "Bad Config",
             "eventFilteringConfiguration": {}
         }
         with patch('migrator.requests.put') as mock_put:
             result = self.migrator._create_config(config, "Bad Config")
-        assert result is False
+        assert result is None
         mock_put.assert_not_called()
 
     def test_update_config_skips_on_empty_filter(self):
-        """_update_config returns False (without HTTP call) when filter is empty."""
+        """_update_config returns None (without HTTP call) when filter is empty."""
         config = {
             "alertName": "Bad Config",
             "eventFilteringConfiguration": {}
         }
         with patch('migrator.requests.put') as mock_put:
             result = self.migrator._update_config(config, "existing_id", "Bad Config")
-        assert result is False
+        assert result is None
         mock_put.assert_not_called()
 
     def test_update_config_uses_target_id_in_body(self):
@@ -649,7 +660,7 @@ class TestAlertConfigsMigrator:
     def test_migrate_returns_zeros_when_source_fails(self, _mock):
         """migrate returns zero-filled dict when source fetch fails."""
         result = self.migrator.migrate()
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
     @patch.object(AlertConfigsMigrator, '_get_target_configs', return_value=None)
@@ -660,7 +671,7 @@ class TestAlertConfigsMigrator:
             {"alertName": "Config 2", "eventFilteringConfiguration": {}}
         ]
         result = self.migrator.migrate()
-        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
     @patch.object(AlertConfigsMigrator, '_get_target_configs')
