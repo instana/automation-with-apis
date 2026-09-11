@@ -5,6 +5,8 @@ Migrates Application Perspectives (application configs) using the instana_client
 
 import sys
 import os
+import json
+import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
@@ -13,8 +15,45 @@ from typing import Dict, List, Optional
 
 import instana_client
 from instana_client.api.application_settings_api import ApplicationSettingsApi
+from instana_client.exceptions import ApiException
 from instana_client.models.application_config import ApplicationConfig
 from instana_client.models.new_application_config import NewApplicationConfig
+
+# Older Instana backends encode businessCriticality as an integer.
+# Map those legacy values to the string enum the SDK expects (read path).
+_BUSINESS_CRITICALITY_INT_TO_STR: Dict[int, str] = {
+    0: "NOT_DEFINED",
+    1: "LOWEST",
+    2: "LOW",
+    3: "MEDIUM",
+    4: "HIGH",
+    5: "HIGHEST",
+}
+
+# Reverse map for the write path — older targets expect an integer.
+_BUSINESS_CRITICALITY_STR_TO_INT: Dict[str, int] = {
+    v: k for k, v in _BUSINESS_CRITICALITY_INT_TO_STR.items()
+}
+
+
+def _print_api_error(prefix: str, e: ApiException) -> None:
+    """Print a concise error message from an ApiException.
+
+    Extracts just the HTTP status and the response body (which typically
+    contains the server-side error detail) rather than dumping full headers.
+
+    Args:
+        prefix: Message prefix, e.g. "✗ Failed to migrate config 'foo'".
+        e: The ApiException to summarise.
+    """
+    body = e.body or ""
+    try:
+        import json as _json
+        parsed = _json.loads(body)
+        detail = parsed.get("details") or parsed.get("message") or body
+    except Exception:
+        detail = body
+    print(f"{prefix}: HTTP {e.status} - {detail}")
 
 
 def _build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
@@ -48,6 +87,8 @@ class ApplicationConfigMigrator:
             config: Configuration object with backend details.
         """
         self.config = config
+        if not config.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def migrate(self) -> Dict[str, int]:
         """Perform the migration of application configurations.
@@ -133,6 +174,10 @@ class ApplicationConfigMigrator:
     ) -> Optional[List[ApplicationConfig]]:
         """Retrieve all application configs from a backend.
 
+        Fetches raw JSON so that legacy integer ``businessCriticality`` values
+        (returned by older Instana backends) are coerced to their string enum
+        equivalents before pydantic strict validation runs.
+
         Args:
             api: The ApplicationSettingsApi client to use.
             label: Human-readable label for logging ("source" or "target").
@@ -141,12 +186,51 @@ class ApplicationConfigMigrator:
             List of ApplicationConfig objects or None on failure.
         """
         try:
-            configs = api.get_application_configs()
+            raw = api.get_application_configs_without_preload_content()
+            items = json.loads(raw.read())
+            for item in items:
+                bc = item.get("businessCriticality")
+                if isinstance(bc, int):
+                    item["businessCriticality"] = _BUSINESS_CRITICALITY_INT_TO_STR.get(bc)
+            configs = [ApplicationConfig.from_dict(item) for item in items]
             print(f"Fetched {len(configs)} application configs from {label}.")
             return configs
         except Exception as e:
             print(f"Error fetching {label} application configs: {e}")
             return None
+
+    def _build_config_payload(self, cfg: ApplicationConfig) -> dict:
+        """Serialise an ApplicationConfig to a plain dict ready for the REST API.
+
+        Converts ``businessCriticality`` back to an integer when the value is
+        a string enum, so that older target backends (which expect integers) are
+        handled correctly.
+
+        Args:
+            cfg: Source ApplicationConfig to serialise.
+
+        Returns:
+            Dict suitable for use as a JSON request body.
+        """
+        bc = cfg.business_criticality
+        if isinstance(bc, str):
+            bc = _BUSINESS_CRITICALITY_STR_TO_INT.get(bc, bc)
+
+        access_rules = (
+            [r.to_dict() for r in cfg.access_rules] if cfg.access_rules else []
+        )
+        payload: dict = {
+            "accessRules": access_rules,
+            "boundaryScope": cfg.boundary_scope,
+            "businessCriticality": bc,
+            "label": cfg.label,
+            "scope": cfg.scope,
+        }
+        if cfg.match_specification is not None:
+            payload["matchSpecification"] = cfg.match_specification.to_dict()
+        if cfg.tag_filter_expression is not None:
+            payload["tagFilterExpression"] = cfg.tag_filter_expression.to_dict()
+        return payload
 
     def _create_config(
         self, api: ApplicationSettingsApi, cfg: ApplicationConfig
@@ -161,18 +245,30 @@ class ApplicationConfigMigrator:
             True on success, False otherwise.
         """
         try:
-            payload = NewApplicationConfig(
-                accessRules=cfg.access_rules,
-                boundaryScope=cfg.boundary_scope,
-                businessCriticality=cfg.business_criticality,
-                label=cfg.label,
-                matchSpecification=cfg.match_specification,
-                scope=cfg.scope,
-                tagFilterExpression=cfg.tag_filter_expression,
+            payload = self._build_config_payload(cfg)
+            _param = api.api_client.param_serialize(
+                method="POST",
+                resource_path="/api/application-monitoring/settings/application",
+                header_params={"Content-Type": "application/json", "Accept": "application/json"},
+                body=payload,
+                auth_settings=["ApiKeyAuth"],
             )
-            result = api.add_application_config(payload)
-            print(f"✓ Migrated application config '{cfg.label}' (Target ID: {result.id})")
+            response_data = api.api_client.call_api(*_param)
+            response_data.read()
+            body = response_data.data
+            target_id = None
+            if body:
+                try:
+                    result = json.loads(body)
+                    target_id = result.get('id')
+                except Exception:
+                    pass
+            id_str = f"Target ID: {target_id}" if target_id else "created"
+            print(f"✓ Migrated application config '{cfg.label}' ({id_str})")
             return True
+        except ApiException as e:
+            _print_api_error(f"✗ Failed to migrate application config '{cfg.label}'", e)
+            return False
         except Exception as e:
             print(f"✗ Failed to migrate application config '{cfg.label}': {e}")
             return False
@@ -198,20 +294,31 @@ class ApplicationConfigMigrator:
             print(f"✗ Could not find target application config '{cfg.label}' for update.")
             return False
         try:
-            # PUT expects the full ApplicationConfig including the target's id
-            updated_cfg = ApplicationConfig(
-                id=target.id,
-                accessRules=cfg.access_rules,
-                boundaryScope=cfg.boundary_scope,
-                businessCriticality=cfg.business_criticality,
-                label=cfg.label,
-                matchSpecification=cfg.match_specification,
-                scope=cfg.scope,
-                tagFilterExpression=cfg.tag_filter_expression,
+            payload = self._build_config_payload(cfg)
+            payload["id"] = target.id
+            _param = api.api_client.param_serialize(
+                method="PUT",
+                resource_path=f"/api/application-monitoring/settings/application/{target.id}",
+                header_params={"Content-Type": "application/json", "Accept": "application/json"},
+                body=payload,
+                auth_settings=["ApiKeyAuth"],
             )
-            result = api.put_application_config(target.id, updated_cfg)
-            print(f"✓ Updated application config '{cfg.label}' (Target ID: {result.id})")
+            response_data = api.api_client.call_api(*_param)
+            response_data.read()
+            body = response_data.data
+            target_id = None
+            if body:
+                try:
+                    result = json.loads(body)
+                    target_id = result.get('id')
+                except Exception:
+                    pass
+            id_str = f"Target ID: {target_id}" if target_id else f"Target ID: {target.id}"
+            print(f"✓ Updated application config '{cfg.label}' ({id_str})")
             return True
+        except ApiException as e:
+            _print_api_error(f"✗ Failed to update application config '{cfg.label}'", e)
+            return False
         except Exception as e:
             print(f"✗ Failed to update application config '{cfg.label}': {e}")
             return False

@@ -53,6 +53,36 @@ def main():
         configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert configurations (api or file)')
         configs_parser.add_argument('--events-file-path', help='Path to the source configurations JSON file (when using file source)')
 
+        # Application configurations migrator
+        applications_parser = subparsers.add_parser('applications', help='Migrate application configurations (Application Perspectives)')
+        applications_parser.add_argument('--config-file', help='Path to configuration file')
+        applications_parser.add_argument('--source-token', help='API token for source backend')
+        applications_parser.add_argument('--source-url', help='URL for source backend')
+        applications_parser.add_argument('--target-token', help='API token for target backend')
+        applications_parser.add_argument('--target-url', help='URL for target backend')
+        applications_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        applications_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate application config is found (default: ask)')
+
+        # Service configurations migrator
+        services_parser = subparsers.add_parser('services', help='Migrate service configurations')
+        services_parser.add_argument('--config-file', help='Path to configuration file')
+        services_parser.add_argument('--source-token', help='API token for source backend')
+        services_parser.add_argument('--source-url', help='URL for source backend')
+        services_parser.add_argument('--target-token', help='API token for target backend')
+        services_parser.add_argument('--target-url', help='URL for target backend')
+        services_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        services_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate service config is found (default: ask)')
+
+        # Endpoint configurations migrator
+        endpoints_parser = subparsers.add_parser('endpoints', help='Migrate endpoint configurations')
+        endpoints_parser.add_argument('--config-file', help='Path to configuration file')
+        endpoints_parser.add_argument('--source-token', help='API token for source backend')
+        endpoints_parser.add_argument('--source-url', help='URL for source backend')
+        endpoints_parser.add_argument('--target-token', help='API token for target backend')
+        endpoints_parser.add_argument('--target-url', help='URL for target backend')
+        endpoints_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        endpoints_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate endpoint config is found (default: ask)')
+
         # Custom dashboards migrator
         custom_dashboards_parser = subparsers.add_parser('custom-dashboards', help='Migrate custom dashboards')
         custom_dashboards_parser.add_argument('--config-file', help='Path to configuration file')
@@ -154,6 +184,45 @@ def main():
                 sys.exit(0)
             else:
                 # Exit with error code if no configurations were migrated
+                sys.exit(1)
+
+        elif args.command == 'applications':
+            # Import and run the application configurations migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'application-configuration'))
+            from migrator import ApplicationConfigMigrator
+            migrator = ApplicationConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one application config was migrated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
+
+        elif args.command == 'services':
+            # Import and run the service configurations migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'service-configuration'))
+            from migrator import ServiceConfigMigrator
+            migrator = ServiceConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one service config was migrated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
+
+        elif args.command == 'endpoints':
+            # Import and run the endpoint configurations migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'endpoint-configuration'))
+            from migrator import EndpointConfigMigrator
+            migrator = EndpointConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one endpoint config was migrated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
                 sys.exit(1)
 
         elif args.command == 'custom-dashboards':

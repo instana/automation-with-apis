@@ -12,6 +12,7 @@ that share the same service IDs (e.g. staging → production restores).
 
 import sys
 import os
+import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
@@ -54,6 +55,8 @@ class EndpointConfigMigrator:
             config: Configuration object with backend details.
         """
         self.config = config
+        if not config.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def migrate(self) -> Dict[str, int]:
         """Perform the migration of endpoint configurations.

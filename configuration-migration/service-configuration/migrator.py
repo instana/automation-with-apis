@@ -5,6 +5,7 @@ Migrates custom service rules (service configs) using the instana_client SDK.
 
 import sys
 import os
+import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
@@ -47,6 +48,8 @@ class ServiceConfigMigrator:
             config: Configuration object with backend details.
         """
         self.config = config
+        if not config.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def migrate(self) -> Dict[str, int]:
         """Perform the migration of service configurations.
