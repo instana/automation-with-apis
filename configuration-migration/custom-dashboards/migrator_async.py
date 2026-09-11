@@ -1,5 +1,6 @@
 """Async optimized version of custom dashboards migrator."""
 
+import copy
 import sys
 import asyncio
 import aiohttp
@@ -48,7 +49,7 @@ class CustomDashboardsMigratorAsync:
         """Perform the async migration of custom dashboards.
         
         Returns:
-            Dictionary with counts of source, migrated, updated, and skipped dashboards
+            Dictionary with counts of source, migrated, updated, skipped, and failed dashboards
         """
         # Validate configuration before proceeding
         self.config.validate()
@@ -59,22 +60,30 @@ class CustomDashboardsMigratorAsync:
         override_existing = self._prompt_for_override_strategy()
         
         async with self.async_client as client:
-            # Step 1: Get target dashboards first (lightweight - just list)
+            # Step 1: Get target dashboards first (full detail for equality checks)
             target_dashboards = await self._get_target_dashboards_async(client)
             
             if target_dashboards is None:
                 print("Warning: Could not retrieve target dashboards. Duplicate detection disabled.")
                 target_dashboards = []
             
-            # Build a map of existing dashboard titles to IDs for duplicate detection
-            existing_dashboards = {d['title']: d['id'] for d in target_dashboards if 'title' in d and 'id' in d}
+            # Build a map of existing dashboard titles to full dicts for duplicate
+            # detection and content-equality checks (Bug 3, Bug 9).
+            existing_dashboards = {d['title']: d for d in target_dashboards if 'title' in d and 'id' in d}
             print(f"Found {len(existing_dashboards)} existing dashboards in target")
-            
-            # Step 2: Get source dashboards with smart filtering based on override_existing
-            source_dashboards = await self._get_source_dashboards_async(client, existing_dashboards, override_existing)
+
+            # The smart-filtering helper uses title-only existence, so pass a
+            # compatible title→id map derived from the full dict map.
+            existing_ids_by_title = {title: d['id'] for title, d in existing_dashboards.items()}
+
+            # Step 2: Get source dashboards (API or file) with smart filtering
+            if self.config.events_source.lower() == "file":
+                source_dashboards = self._get_source_dashboards_from_file()
+            else:
+                source_dashboards = await self._get_source_dashboards_async(client, existing_ids_by_title, override_existing)
             
             if source_dashboards is None:
-                return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+                return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
             
             # Get users from source and target for mapping
             source_users, target_users = await asyncio.gather(
@@ -84,11 +93,11 @@ class CustomDashboardsMigratorAsync:
             
             if source_users is None:
                 print("Could not retrieve source users, aborting migration.")
-                return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+                return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
             
             if target_users is None:
                 print("Could not retrieve target users, aborting migration.")
-                return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0}
+                return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
             
             # Map users
             user_map: Dict[str, str] = {}
@@ -102,7 +111,7 @@ class CustomDashboardsMigratorAsync:
             skipped_count = 0
             
             for dashboard in source_dashboards:
-                prepared = self._prepare_dashboard(dashboard, user_map, target_users)
+                prepared = self._prepare_dashboard(dashboard, user_map)
                 if prepared is None:
                     skipped_count += 1
                 else:
@@ -114,16 +123,18 @@ class CustomDashboardsMigratorAsync:
             migrated_count = results.count('created')
             updated_count = results.count('updated')
             skipped_count += results.count('skipped')
-            
+            failed_count = results.count('failed')
+
             print(f"\nMigration complete. Found {len(source_dashboards)} source dashboards, "
                   f"migrated {migrated_count} custom dashboards, updated {updated_count} dashboards, "
-                  f"skipped {skipped_count} dashboards.")
+                  f"skipped {skipped_count} dashboards, failed {failed_count} dashboards.")
             
             return {
                 "source": len(source_dashboards),
                 "migrated": migrated_count,
                 "updated": updated_count,
-                "skipped": skipped_count
+                "skipped": skipped_count,
+                "failed": failed_count,
             }
     
     def _prompt_for_override_strategy(self) -> bool:
@@ -165,12 +176,14 @@ class CustomDashboardsMigratorAsync:
                 return False
             elif choice in ['c', 'cancel']:
                 print("Migration cancelled by user")
-                sys.exit(0)
+                return False
             else:
                 print("Invalid choice. Please try again.")
     
-    def _prepare_dashboard(self, dashboard: Dict[str, Any], user_map: Dict[str, str], target_users: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _prepare_dashboard(self, dashboard: Dict[str, Any], user_map: Dict[str, str]) -> Optional[Dict[str, Any]]:
         """Prepare a dashboard for migration.
+
+        Returns a deep copy so the original source dict is never mutated.
         
         Args:
             dashboard: Source dashboard
@@ -178,21 +191,31 @@ class CustomDashboardsMigratorAsync:
             target_users: List of users from target system
             
         Returns:
-            Prepared dashboard or None if should be skipped
+            Prepared dashboard copy or None if should be skipped
         """
         dashboard_title = dashboard.get('title')
         
         if not dashboard_title:
             print("Skipping dashboard with no title")
             return None
-        
+
+        # Work on a copy so the caller's dict is never mutated (Bug 5)
+        dashboard = copy.deepcopy(dashboard)
+
         # Remove the 'owner' field if it exists
         if 'owner' in dashboard:
             del dashboard['owner']
         
-        # Remove ownerId - not needed in POST payload
-        if 'ownerId' in dashboard:
-            del dashboard['ownerId']
+        # Remap ownerId to the corresponding target user; fall back to
+        # default_owner_id when no mapping exists, and only drop it when
+        # neither is available (Bug 2).
+        source_owner_id = dashboard.get('ownerId')
+        if source_owner_id is not None:
+            target_owner_id = user_map.get(source_owner_id, self.config.default_owner_id)
+            if target_owner_id:
+                dashboard['ownerId'] = target_owner_id
+            else:
+                del dashboard['ownerId']
         
         # Set accessRules to GLOBAL READ_WRITE with empty relatedId
         # This is the working structure that persists dashboards correctly
@@ -227,13 +250,36 @@ class CustomDashboardsMigratorAsync:
                 print(f"Widget data: {widget}")
                 return None
         
-        # Keep ALL fields from source including 'id'
-        # The API documentation shows 'id' as REQUIRED
-        # Keep rbacTags, writable, canBeSharedByConfiguration and any other fields from source
-        # The API needs these fields to properly persist the dashboard
-        
         return dashboard
-    
+
+    def _get_source_dashboards_from_file(self) -> Optional[List[Dict[str, Any]]]:
+        """Load source dashboards from a local JSON file (Bug 8).
+
+        Args:
+            (uses self.config.events_file_path)
+
+        Returns:
+            List of dashboard dicts or None if the file cannot be read
+        """
+        file_path = self.config.events_file_path
+        print(f"Loading source dashboards from file: {file_path}")
+        try:
+            with open(file_path, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            print(f"Error: Source file not found: {file_path}")
+            return None
+        except json.JSONDecodeError as exc:
+            print(f"Error: Could not parse JSON from {file_path}: {exc}")
+            return None
+
+        if not isinstance(data, list):
+            print(f"Error: Expected a JSON array in {file_path}, got {type(data).__name__}")
+            return None
+
+        print(f"Loaded {len(data)} dashboards from file")
+        return data
+
     async def _get_source_dashboards_async(self, client: AsyncHTTPClient, existing_dashboards: Dict[str, str], override_existing: bool) -> Optional[List[Dict[str, Any]]]:
         """Get custom dashboards from source backend with smart filtering.
         
@@ -328,13 +374,17 @@ class CustomDashboardsMigratorAsync:
                 return await response.json()
     
     async def _get_target_dashboards_async(self, client: AsyncHTTPClient) -> Optional[List[Dict[str, Any]]]:
-        """Get all custom dashboards from target backend.
+        """Get all custom dashboards from target backend (full detail).
+
+        The list endpoint returns summary objects only.  Full details are
+        fetched individually so that content-equality comparisons work
+        correctly (Bug 3).
         
         Args:
             client: Async HTTP client
             
         Returns:
-            List of dashboards or None on error
+            List of full dashboards or None on error
         """
         try:
             async with client.retry_client.get(
@@ -342,9 +392,26 @@ class CustomDashboardsMigratorAsync:
                 headers=self.config.get_target_headers()
             ) as response:
                 response.raise_for_status()
-                dashboards = await response.json()
-                print(f"Retrieved {len(dashboards)} dashboards from target")
-                return dashboards
+                summaries = await response.json()
+
+            print(f"Retrieved {len(summaries)} dashboard summaries from target; fetching full details…")
+
+            dashboard_ids = [d['id'] for d in summaries if 'id' in d]
+            tasks = [
+                self._fetch_dashboard_detail(client, dashboard_id, 'target')
+                for dashboard_id in dashboard_ids
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            full_dashboards = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    print(f"Warning: Failed to fetch target dashboard {dashboard_ids[i]}: {result}")
+                else:
+                    full_dashboards.append(result)
+
+            print(f"Fetched {len(full_dashboards)} full target dashboards")
+            return full_dashboards
         except Exception as e:
             print(f"Error retrieving target dashboards: {e}")
             return None
@@ -402,39 +469,58 @@ class CustomDashboardsMigratorAsync:
             client: Async HTTP client
             dashboards: List of prepared dashboards
             override_existing: Whether to override existing dashboards
-            existing_dashboards: Map of dashboard titles to IDs in target
+            existing_dashboards: Map of dashboard titles to full dashboard dicts in target
             
         Returns:
-            List of results ('created', 'updated', or 'skipped')
+            List of results ('created', 'updated', 'skipped', or 'failed')
         """
-        tasks = [
-            self._create_or_update_dashboard_async(client, dashboard, override_existing, existing_dashboards)
-            for dashboard in dashboards
-        ]
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Convert exceptions to 'skipped'
-        return [r if isinstance(r, str) else 'skipped' for r in results]
+        # Migrations are run sequentially, not concurrently.
+        # Firing all POSTs simultaneously overwhelms the Instana backend:
+        # it accepts every request and hands back IDs, but the writes race
+        # each other internally and some records end up with null fields that
+        # are invisible in the UI even though a GET returns them.
+        # Sequential execution gives the backend time to fully commit each
+        # write before the next one arrives.
+        results = []
+        for dashboard in dashboards:
+            try:
+                result = await self._create_or_update_dashboard_async(
+                    client, dashboard, override_existing, existing_dashboards
+                )
+                results.append(result)
+            except Exception:
+                results.append('failed')
+        return results
     
-    async def _create_or_update_dashboard_async(self, client: AsyncHTTPClient, dashboard: Dict[str, Any], override_existing: bool, existing_dashboards: Dict[str, str]) -> str:
+    async def _create_or_update_dashboard_async(self, client: AsyncHTTPClient, dashboard: Dict[str, Any], override_existing: bool, existing_dashboards: Dict[str, Any]) -> str:
         """Create dashboard, or update if it exists and override is enabled.
+
+        existing_dashboards maps title → full target dashboard dict so that
+        a content-equality check (Bug 9) can be performed without an extra
+        network round-trip.
         
         Args:
             client: Async HTTP client
             dashboard: Dashboard configuration
             override_existing: Whether to override existing dashboards
-            existing_dashboards: Map of dashboard titles to IDs in target
+            existing_dashboards: Map of dashboard titles to full target dashboard dicts
             
         Returns:
-            'created', 'updated', or 'skipped'
+            'created', 'updated', 'skipped', or 'failed'
         """
         dashboard_title = dashboard.get('title', 'N/A')
         
         # Check if dashboard already exists
         if dashboard_title in existing_dashboards:
-            existing_id = existing_dashboards[dashboard_title]
+            existing_dashboard = existing_dashboards[dashboard_title]
+            existing_id = existing_dashboard['id']
             if override_existing:
+                # Content-equality check: skip the PUT when nothing changed (Bug 9)
+                source_widgets = dashboard.get('widgets')
+                target_widgets = existing_dashboard.get('widgets')
+                if source_widgets == target_widgets:
+                    print(f"= Dashboard '{dashboard_title}' is identical to target, skipping update...")
+                    return 'skipped'
                 print(f"⟳ Dashboard '{dashboard_title}' already exists (ID: {existing_id}), updating...")
                 return await self._update_existing_dashboard_async(client, dashboard, dashboard_title, existing_id)
             else:
@@ -456,32 +542,10 @@ class CustomDashboardsMigratorAsync:
                     
                     if 'id' in new_dashboard:
                         print(f"✓ Created dashboard '{dashboard_title}' (ID: {new_dashboard['id']})")
-                        
-                        # VERIFY: Check if dashboard actually exists with valid data
-                        try:
-                            async with client.retry_client.get(
-                                f"{self.config.target_url}{self.req_custom_dashboards}/{new_dashboard['id']}",
-                                headers=self.config.get_target_headers()
-                            ) as verify_response:
-                                if verify_response.status == 200:
-                                    verified_dashboard = await verify_response.json()
-                                    # Check if dashboard has valid data (not all NULL fields)
-                                    if verified_dashboard.get('title') and verified_dashboard.get('widgets'):
-                                        print(f"  ✓ Verified dashboard exists with valid data")
-                                    else:
-                                        print(f"  ✗ ERROR: Dashboard created but has NULL fields!")
-                                        print(f"     API returned success but dashboard is invalid")
-                                        print(f"     This is an Instana API bug - dashboard not persisted correctly")
-                                        return 'skipped'
-                                else:
-                                    print(f"  ⚠ Warning: Dashboard created but verification failed (status: {verify_response.status})")
-                        except Exception as e:
-                            print(f"  ⚠ Warning: Could not verify dashboard: {e}")
-                        
                         return 'created'
                     else:
                         print(f"✗ Failed to create dashboard '{dashboard_title}' - no ID returned")
-                        return 'skipped'
+                        return 'failed'
                         
             except aiohttp.ClientResponseError as e:
                 # Check if it's a conflict (dashboard already exists)
@@ -499,10 +563,10 @@ class CustomDashboardsMigratorAsync:
                         return 'skipped'
                 else:
                     print(f"✗ Failed to create dashboard '{dashboard_title}': {e}")
-                    return 'skipped'
+                    return 'failed'
             except Exception as e:
                 print(f"✗ Failed to create dashboard '{dashboard_title}': {e}")
-                return 'skipped'
+                return 'failed'
     
     async def _find_dashboard_id_by_title_async(self, client: AsyncHTTPClient, title: str) -> Optional[str]:
         """Find dashboard ID by title (only called on conflict).
@@ -526,7 +590,8 @@ class CustomDashboardsMigratorAsync:
                     if d.get('title') == title and 'id' in d:
                         return d['id']
                 return None
-        except:
+        except Exception as e:
+            print(f"⚠ Could not look up dashboard ID for '{title}': {e}")
             return None
     
     async def _update_existing_dashboard_async(self, client: AsyncHTTPClient, dashboard: Dict[str, Any], title: str, dashboard_id: str) -> str:
