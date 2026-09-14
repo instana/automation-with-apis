@@ -185,6 +185,9 @@ class WebsiteConfigMigrator:
         # Validate configuration
         self.config.validate()
 
+        if self.config.dry_run:
+            return self._dry_run()
+
         print("Starting migration of website configurations...")
 
         # Get source websites
@@ -251,5 +254,82 @@ class WebsiteConfigMigrator:
             "migrated": migrated_count,
             "updated": updated_count,
             "skipped": skipped_count,
+            "website_mapping": website_mapping,
+        }
+
+    def _dry_run(self) -> Dict[str, Any]:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate()
+        """
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        print(f"Connecting to source: {self.config.source_url} ...")
+        source_websites = self._get_source_website_config()
+        if source_websites is None:
+            print("[DRY RUN] Could not fetch source website configurations. Aborting preview.")
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+        print(f"  OK ({len(source_websites)} website configs found)\n")
+
+        print(f"Connecting to target: {self.config.target_url} ...")
+        target_websites = self._get_target_website_config()
+        if target_websites is None:
+            print("[DRY RUN] Could not fetch target website configurations. Aborting preview.")
+            return {"source": len(source_websites), "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+        print(f"  OK ({len(target_websites)} website configs found)\n")
+
+        website_mapping = self._build_website_mapping(source_websites, target_websites)
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for source_website in source_websites:
+            source_id = source_website.get('id')
+            source_name = source_website.get('name')
+
+            if not source_name or not source_id:
+                skip_lines.append("  ✗ Would skip    (website with missing name or id)")
+                skipped_invalid += 1
+                continue
+
+            if source_id in website_mapping:
+                update_lines.append(f"  ~ Would update  '{source_name}' (exists in target by name match)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{source_name}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+        if skip_lines:
+            print()
+            for line in skip_lines:
+                print(line)
+
+        skipped_total = skipped_invalid
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source website configs      : {len(source_websites)}")
+        print(f"  Target website configs now  : {len(target_websites)}")
+        print(f"  Would be created            : {would_create}")
+        print(f"  Would be updated            : {would_update}")
+        print(f"  Would skip                  : {skipped_total}  ({skipped_invalid} invalid)")
+        print(f"  Would fail                  : 0")
+        print(f"\n  Target website configs after migration would be: {len(target_websites) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        return {
+            "source": len(source_websites),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped": skipped_total,
             "website_mapping": website_mapping,
         }
