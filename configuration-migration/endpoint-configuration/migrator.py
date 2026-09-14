@@ -12,6 +12,7 @@ that share the same service IDs (e.g. staging → production restores).
 
 import sys
 import os
+import json
 import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -151,6 +152,14 @@ class EndpointConfigMigrator:
     ) -> Optional[List[EndpointConfig]]:
         """Retrieve all endpoint configs from a backend.
 
+        Fetches raw JSON to work around two SDK validation issues present in
+        some Instana backends:
+          - ``endpointCase`` may be ``null`` even though the model declares it
+            as a non-optional ``StrictStr``.  We default it to ``"ORIGINAL"``.
+          - ``rules`` may be an empty list ``[]`` even though the model requires
+            ``min_length=1``.  We normalise empty lists to ``None`` so the field
+            is treated as absent.
+
         Args:
             api: The ApplicationSettingsApi client to use.
             label: Human-readable label for logging ("source" or "target").
@@ -159,7 +168,15 @@ class EndpointConfigMigrator:
             List of EndpointConfig objects or None on failure.
         """
         try:
-            configs = api.get_endpoint_configs()
+            raw = api.get_endpoint_configs_without_preload_content()
+            items = json.loads(raw.read())
+            configs = []
+            for item in items:
+                if item.get("endpointCase") is None:
+                    item["endpointCase"] = "ORIGINAL"
+                if item.get("rules") == []:
+                    item["rules"] = None
+                configs.append(EndpointConfig.from_dict(item))
             print(f"Fetched {len(configs)} endpoint configs from {label}.")
             return configs
         except Exception as e:
