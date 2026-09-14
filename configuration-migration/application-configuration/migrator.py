@@ -165,10 +165,6 @@ class ApplicationConfigMigrator:
             "skipped": skipped_count,
         }
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
     def _get_configs(
         self, api: ApplicationSettingsApi, label: str
     ) -> Optional[List[ApplicationConfig]]:
@@ -246,21 +242,14 @@ class ApplicationConfigMigrator:
         """
         try:
             payload = self._build_config_payload(cfg)
-            _param = api.api_client.param_serialize(
-                method="POST",
-                resource_path="/api/application-monitoring/settings/application",
-                header_params={"Content-Type": "application/json", "Accept": "application/json"},
-                body=payload,
-                auth_settings=["ApiKeyAuth"],
+            raw = api.add_application_config_without_preload_content.__wrapped__(
+                api, new_application_config=payload,
             )
-            response_data = api.api_client.call_api(*_param)
-            response_data.read()
-            body = response_data.data
+            body = raw.read()
             target_id = None
             if body:
                 try:
-                    result = json.loads(body)
-                    target_id = result.get('id')
+                    target_id = json.loads(body).get('id')
                 except Exception:
                     pass
             id_str = f"Target ID: {target_id}" if target_id else "created"
@@ -296,21 +285,14 @@ class ApplicationConfigMigrator:
         try:
             payload = self._build_config_payload(cfg)
             payload["id"] = target.id
-            _param = api.api_client.param_serialize(
-                method="PUT",
-                resource_path=f"/api/application-monitoring/settings/application/{target.id}",
-                header_params={"Content-Type": "application/json", "Accept": "application/json"},
-                body=payload,
-                auth_settings=["ApiKeyAuth"],
+            raw = api.put_application_config_without_preload_content.__wrapped__(
+                api, id=target.id, application_config=payload,
             )
-            response_data = api.api_client.call_api(*_param)
-            response_data.read()
-            body = response_data.data
+            body = raw.read()
             target_id = None
             if body:
                 try:
-                    result = json.loads(body)
-                    target_id = result.get('id')
+                    target_id = json.loads(body).get('id')
                 except Exception:
                     pass
             id_str = f"Target ID: {target_id}" if target_id else f"Target ID: {target.id}"

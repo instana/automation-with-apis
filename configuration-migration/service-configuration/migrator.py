@@ -5,6 +5,7 @@ Migrates custom service rules (service configs) using the instana_client SDK.
 
 import sys
 import os
+import json
 import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -14,7 +15,27 @@ from typing import Dict, List, Optional
 
 import instana_client
 from instana_client.api.application_settings_api import ApplicationSettingsApi
+from instana_client.exceptions import ApiException
 from instana_client.models.service_config import ServiceConfig
+
+
+def _print_api_error(prefix: str, e: ApiException) -> None:
+    """Print a concise error message from an ApiException.
+
+    Extracts just the HTTP status and the response body (which typically
+    contains the server-side error detail) rather than dumping full headers.
+
+    Args:
+        prefix: Message prefix, e.g. "✗ Failed to migrate config 'foo'".
+        e: The ApiException to summarise.
+    """
+    body = e.body or ""
+    try:
+        parsed = json.loads(body)
+        detail = parsed.get("details") or parsed.get("message") or body
+    except Exception:
+        detail = body
+    print(f"{prefix}: HTTP {e.status} - {detail}")
 
 
 def _build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
@@ -126,14 +147,13 @@ class ServiceConfigMigrator:
             "skipped": skipped_count,
         }
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
     def _get_configs(
         self, api: ApplicationSettingsApi, label: str
     ) -> Optional[List[ServiceConfig]]:
         """Retrieve all service configs from a backend.
+
+        Fetches raw JSON so that any backend quirks are handled before
+        pydantic strict validation runs.
 
         Args:
             api: The ApplicationSettingsApi client to use.
@@ -143,12 +163,33 @@ class ServiceConfigMigrator:
             List of ServiceConfig objects or None on failure.
         """
         try:
-            configs = api.get_service_configs()
+            raw = api.get_service_configs_without_preload_content()
+            items = json.loads(raw.read())
+            configs = [ServiceConfig.from_dict(item) for item in items]
             print(f"Fetched {len(configs)} service configs from {label}.")
             return configs
         except Exception as e:
             print(f"Error fetching {label} service configs: {e}")
             return None
+
+    def _build_config_payload(self, cfg: ServiceConfig) -> dict:
+        """Serialise a ServiceConfig to a plain dict ready for the REST API.
+
+        Args:
+            cfg: Source ServiceConfig to serialise.
+
+        Returns:
+            Dict suitable for use as a JSON request body.
+        """
+        payload: dict = {
+            "enabled": cfg.enabled,
+            "label": cfg.label,
+            "matchSpecification": [r.to_dict() for r in cfg.match_specification],
+            "name": cfg.name,
+        }
+        if cfg.comment is not None:
+            payload["comment"] = cfg.comment
+        return payload
 
     def _create_config(self, api: ApplicationSettingsApi, cfg: ServiceConfig) -> bool:
         """Create a new service config on the target backend.
@@ -161,19 +202,23 @@ class ServiceConfigMigrator:
             True on success, False otherwise.
         """
         try:
-            # ServiceConfig is used directly for both create (POST) and update (PUT).
-            # Strip the source id so the target generates its own.
-            payload = ServiceConfig(
-                comment=cfg.comment,
-                enabled=cfg.enabled,
-                id=cfg.id,
-                label=cfg.label,
-                matchSpecification=cfg.match_specification,
-                name=cfg.name,
+            payload = self._build_config_payload(cfg)
+            raw = api.add_service_config_without_preload_content.__wrapped__(
+                api, service_config=payload,
             )
-            result = api.add_service_config(payload)
-            print(f"✓ Migrated service config '{cfg.name}' (Target ID: {result.id})")
+            body = raw.read()
+            target_id = None
+            if body:
+                try:
+                    target_id = json.loads(body).get("id")
+                except Exception:
+                    pass
+            id_str = f"Target ID: {target_id}" if target_id else "created"
+            print(f"✓ Migrated service config '{cfg.name}' ({id_str})")
             return True
+        except ApiException as e:
+            _print_api_error(f"✗ Failed to migrate service config '{cfg.name}'", e)
+            return False
         except Exception as e:
             print(f"✗ Failed to migrate service config '{cfg.name}': {e}")
             return False
@@ -199,17 +244,24 @@ class ServiceConfigMigrator:
             print(f"✗ Could not find target service config '{cfg.name}' for update.")
             return False
         try:
-            updated_cfg = ServiceConfig(
-                comment=cfg.comment,
-                enabled=cfg.enabled,
-                id=target.id,
-                label=cfg.label,
-                matchSpecification=cfg.match_specification,
-                name=cfg.name,
+            payload = self._build_config_payload(cfg)
+            payload["id"] = target.id
+            raw = api.put_service_config_without_preload_content.__wrapped__(
+                api, id=target.id, service_config=payload,
             )
-            result = api.put_service_config(target.id, updated_cfg)
-            print(f"✓ Updated service config '{cfg.name}' (Target ID: {result.id})")
+            body = raw.read()
+            target_id = None
+            if body:
+                try:
+                    target_id = json.loads(body).get("id")
+                except Exception:
+                    pass
+            id_str = f"Target ID: {target_id}" if target_id else f"Target ID: {target.id}"
+            print(f"✓ Updated service config '{cfg.name}' ({id_str})")
             return True
+        except ApiException as e:
+            _print_api_error(f"✗ Failed to update service config '{cfg.name}'", e)
+            return False
         except Exception as e:
             print(f"✗ Failed to update service config '{cfg.name}': {e}")
             return False
