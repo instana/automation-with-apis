@@ -60,6 +60,9 @@ class CustomDashboardsMigrator:
         Returns:
             Dictionary with counts of source, migrated, updated, and skipped dashboards
         """
+        if self.config.dry_run:
+            return self._dry_run_sync()
+
         # Use async implementation if available for better performance
         if self._use_async:
             return self._async_migrator.migrate()
@@ -220,6 +223,98 @@ class CustomDashboardsMigrator:
             "migrated": migrated_count,
             "updated": updated_count,
             "skipped": skipped_count
+        }
+
+    def _dry_run_sync(self) -> Dict[str, int]:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate()
+        """
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        print(f"Connecting to source: {self.config.source_url} ...")
+        source_dashboards = self._get_source_dashboards()
+        if source_dashboards is None:
+            print("[DRY RUN] Could not fetch source dashboards. Aborting preview.")
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+        print(f"  OK ({len(source_dashboards)} dashboards found)\n")
+
+        print(f"Connecting to target: {self.config.target_url} ...")
+        target_dashboards = self._get_target_dashboards()
+        if target_dashboards is None:
+            print("[DRY RUN] Could not fetch target dashboards. Aborting preview.")
+            return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0}
+        print(f"  OK ({len(target_dashboards)} dashboards found)\n")
+
+        target_titles = {d.get('title') for d in target_dashboards if d.get('title')}
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for dashboard in source_dashboards:
+            dashboard_title = dashboard.get('title')
+
+            if not dashboard_title:
+                skip_lines.append("  ✗ Would skip    (dashboard with no title)")
+                skipped_invalid += 1
+                continue
+
+            if not dashboard.get('widgets'):
+                skip_lines.append(f"  ✗ Would skip    '{dashboard_title}' (invalid: no widgets)")
+                skipped_invalid += 1
+                continue
+
+            # Check widget structure
+            widget_invalid = False
+            for idx, widget in enumerate(dashboard.get('widgets', [])):
+                missing = [f for f in ('id', 'width', 'height', 'config') if not widget.get(f)]
+                if missing:
+                    skip_lines.append(f"  ✗ Would skip    '{dashboard_title}' (invalid: widget {idx} missing {', '.join(missing)})")
+                    widget_invalid = True
+                    break
+            if widget_invalid:
+                skipped_invalid += 1
+                continue
+
+            if dashboard_title in target_titles:
+                update_lines.append(f"  ~ Would update  '{dashboard_title}' (exists in target)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{dashboard_title}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+        if skip_lines:
+            print()
+            for line in skip_lines:
+                print(line)
+
+        skipped_total = skipped_invalid
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source dashboards      : {len(source_dashboards)}")
+        print(f"  Target dashboards now  : {len(target_dashboards)}")
+        print(f"  Would be created       : {would_create}")
+        print(f"  Would be updated       : {would_update}")
+        print(f"  Would skip             : {skipped_total}  ({skipped_invalid} invalid)")
+        print(f"  Would fail             : 0")
+        print(f"\n  Target dashboards after migration would be: {len(target_dashboards) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        return {
+            "source": len(source_dashboards),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped": skipped_total,
         }
 
     def _map_users(self, source_users: List[Dict[str, Any]], target_users: List[Dict[str, Any]]) -> Dict[str, str]:
