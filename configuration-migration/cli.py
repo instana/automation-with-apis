@@ -30,6 +30,7 @@ def main():
         events_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         events_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for custom events (api or file)')
         events_parser.add_argument('--events-file-path', help='Path to the source events JSON file (when using file source)')
+        events_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
         
         # Alert channels migrator
         channels_parser = subparsers.add_parser('channels', help='Migrate alert channels')
@@ -41,6 +42,7 @@ def main():
         channels_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         channels_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert channels (api or file)')
         channels_parser.add_argument('--events-file-path', help='Path to the source channels JSON file (when using file source)')
+        channels_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
         
         # Alert configurations migrator
         configs_parser = subparsers.add_parser('configs', help='Migrate alert configurations')
@@ -52,6 +54,7 @@ def main():
         configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert configurations (api or file)')
         configs_parser.add_argument('--events-file-path', help='Path to the source configurations JSON file (when using file source)')
+        configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Custom dashboards migrator
         custom_dashboards_parser = subparsers.add_parser('custom-dashboards', help='Migrate custom dashboards')
@@ -69,6 +72,7 @@ def main():
         custom_dashboards_parser.add_argument('--rate-limit', type=int, help='API requests per second limit (default: 50)')
         custom_dashboards_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
         custom_dashboards_parser.add_argument('--retry-attempts', type=int, help='Number of retry attempts for failed requests (default: 3)')
+        custom_dashboards_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Maintenance configurations migrator
         maintenance_parser = subparsers.add_parser('maintenance-configs', help='Migrate maintenance configurations')
@@ -82,6 +86,7 @@ def main():
         maintenance_parser.add_argument('--events-file-path', help='Path to the maintenance configurations JSON file (when using file source)')
         maintenance_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a maintenance configuration already exists in the target (default: ask)')
         maintenance_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
+        maintenance_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Website configs migrator
         website_configs_parser = subparsers.add_parser('website-configs', help='Migrate website monitoring configurations')
@@ -94,6 +99,7 @@ def main():
         website_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for website configs (api or file)')
         website_configs_parser.add_argument('--events-file-path', help='Path to the website configs JSON file (when using file source)')
         website_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate website is found (default: ask)')
+        website_configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Parse arguments
         args = parser.parse_args()

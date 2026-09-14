@@ -20,6 +20,7 @@ class Config:
         self.events_file_path = "source_events.json"  # Default file path
         self.default_owner_id = None # Default owner ID for unmapped users
         self.on_duplicate = "ask" # Default action for duplicate items
+        self.dry_run = False  # When True, preview changes without writing anything
         
         # Performance tuning parameters
         self.max_concurrent_requests = 10  # Maximum concurrent API requests
@@ -85,6 +86,11 @@ class Config:
             help="Action to take when a duplicate is found (default: ask)"
         )
         parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Preview what would be migrated without making any changes"
+        )
+        parser.add_argument(
             "--max-concurrent",
             type=int,
             help="Maximum concurrent API requests (default: 10)"
@@ -132,6 +138,8 @@ class Config:
             config.default_owner_id = parsed_args.default_owner_id
         if parsed_args.on_duplicate:
             config.on_duplicate = parsed_args.on_duplicate
+        if parsed_args.dry_run:
+            config.dry_run = True
         if parsed_args.max_concurrent:
             config.max_concurrent_requests = parsed_args.max_concurrent
         if parsed_args.rate_limit:
@@ -181,6 +189,8 @@ class Config:
                 self.default_owner_id = parser["general"]["default_owner_id"]
             if "on_duplicate" in parser["general"]:
                 self.on_duplicate = parser["general"]["on_duplicate"]
+            if "dry_run" in parser["general"]:
+                self.dry_run = parser["general"].getboolean("dry_run")
             if "max_concurrent_requests" in parser["general"]:
                 self.max_concurrent_requests = parser["general"].getint("max_concurrent_requests")
             if "rate_limit_per_second" in parser["general"]:
@@ -210,6 +220,8 @@ class Config:
             self.default_owner_id = os.environ["EVENTS_MIGRATOR_DEFAULT_OWNER_ID"]
         if "EVENTS_MIGRATOR_ON_DUPLICATE" in os.environ:
             self.on_duplicate = os.environ["EVENTS_MIGRATOR_ON_DUPLICATE"]
+        if "EVENTS_MIGRATOR_DRY_RUN" in os.environ:
+            self.dry_run = os.environ["EVENTS_MIGRATOR_DRY_RUN"].lower() not in ("false", "0", "")
         if "EVENTS_MIGRATOR_MAX_CONCURRENT" in os.environ:
             self.max_concurrent_requests = int(os.environ["EVENTS_MIGRATOR_MAX_CONCURRENT"])
         if "EVENTS_MIGRATOR_RATE_LIMIT" in os.environ:
