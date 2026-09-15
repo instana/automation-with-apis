@@ -11,6 +11,9 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from utils import prompt_duplicate
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureIntegrations"]
 
 
 class AlertChannelsMigrator:
@@ -165,21 +168,38 @@ class AlertChannelsMigrator:
         Returns:
             Dictionary with would-be counts using the same keys as migrate()
         """
+        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
         print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        print(f"Connecting to source: {self.config.source_url} ...")
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
         source_channels = self._get_source_channels()
         if source_channels is None:
-            print("[DRY RUN] Could not fetch source channels. Aborting preview.")
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
-        print(f"  OK ({len(source_channels)} channels found)\n")
-
-        print(f"Connecting to target: {self.config.target_url} ...")
+            print("  FAILED — could not fetch source channels.")
+            print("[DRY RUN] Aborting.")
+            return _empty
+        print(f"  Source ... OK ({len(source_channels)} channels found)")
+        print(f"  Destination ({self.config.target_url}) ...")
         target_channels = self._get_target_channels()
         if target_channels is None:
-            print("[DRY RUN] Could not fetch target channels. Aborting preview.")
-            return {"source": len(source_channels), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
-        print(f"  OK ({len(target_channels)} channels found)\n")
+            print("  FAILED — could not fetch destination channels.")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_channels)}
+        print(f"  Destination ... OK ({len(target_channels)} channels found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_channels)}
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
 
         target_id_map: Dict[str, Dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
         target_name_map: Dict[str, Dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}

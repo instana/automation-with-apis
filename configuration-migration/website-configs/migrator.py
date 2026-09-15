@@ -7,6 +7,9 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from utils import prompt_duplicate
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureEumApplications"]
 
 class WebsiteConfigMigrator:
     """Handles migration of website monitoring configurations between backends."""
@@ -248,21 +251,38 @@ class WebsiteConfigMigrator:
         Returns:
             Dictionary with would-be counts using the same keys as migrate()
         """
+        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
         print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        print(f"Connecting to source: {self.config.source_url} ...")
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
         source_websites = self._get_source_website_config()
         if source_websites is None:
-            print("[DRY RUN] Could not fetch source website configurations. Aborting preview.")
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
-        print(f"  OK ({len(source_websites)} website configs found)\n")
-
-        print(f"Connecting to target: {self.config.target_url} ...")
+            print("  FAILED — could not fetch source website configurations.")
+            print("[DRY RUN] Aborting.")
+            return _empty
+        print(f"  Source ... OK ({len(source_websites)} website configs found)")
+        print(f"  Destination ({self.config.target_url}) ...")
         target_websites = self._get_target_website_config()
         if target_websites is None:
-            print("[DRY RUN] Could not fetch target website configurations. Aborting preview.")
-            return {"source": len(source_websites), "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
-        print(f"  OK ({len(target_websites)} website configs found)\n")
+            print("  FAILED — could not fetch destination website configurations.")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_websites)}
+        print(f"  Destination ... OK ({len(target_websites)} website configs found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_websites)}
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
 
         website_mapping = self._build_website_mapping(source_websites, target_websites)
 
