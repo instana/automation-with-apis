@@ -8,6 +8,9 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 
 
 class AlertConfigsMigrator:
@@ -129,25 +132,42 @@ class AlertConfigsMigrator:
         Returns:
             Dictionary with would-be counts using the same keys as migrate()
         """
+        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
         # Build ID maps for accurate remapping preview (read-only)
         self.channel_id_map = self._get_channel_id_map()
         self.event_id_map = self._get_event_id_map()
 
-        print(f"Connecting to source: {self.config.source_url} ...")
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
         source_configs = self._get_source_configs()
         if source_configs is None:
-            print("[DRY RUN] Could not fetch source alert configurations. Aborting preview.")
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
-        print(f"  OK ({len(source_configs)} configurations found)\n")
-
-        print(f"Connecting to target: {self.config.target_url} ...")
+            print("  FAILED — could not fetch source alert configurations.")
+            print("[DRY RUN] Aborting.")
+            return _empty
+        print(f"  Source ... OK ({len(source_configs)} configurations found)")
+        print(f"  Destination ({self.config.target_url}) ...")
         target_configs = self._get_target_configs()
         if target_configs is None:
-            print("[DRY RUN] Could not fetch target alert configurations. Aborting preview.")
-            return {"source": len(source_configs), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
-        print(f"  OK ({len(target_configs)} configurations found)\n")
+            print("  FAILED — could not fetch destination alert configurations.")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_configs)}
+        print(f"  Destination ... OK ({len(target_configs)} configurations found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_configs)}
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
 
         target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
         target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}

@@ -10,6 +10,9 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureMaintenanceWindows"]
 
 # Fields the list endpoint returns but the create/update endpoint does not
 # accept. They are all computed by the server, so they must be dropped before
@@ -168,19 +171,35 @@ class MaintenanceConfigsMigrator:
         """
         print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        print(f"Connecting to source: {self.config.source_url} ...")
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
         source_configs = self._get_source_configs()
         if source_configs is None:
-            print("[DRY RUN] Could not fetch source maintenance configurations. Aborting preview.")
+            print("  FAILED — could not fetch source maintenance configurations.")
+            print("[DRY RUN] Aborting.")
             return self._empty_result(0)
-        print(f"  OK ({len(source_configs)} configurations found)\n")
-
-        print(f"Connecting to target: {self.config.target_url} ...")
+        print(f"  Source ... OK ({len(source_configs)} configurations found)")
+        print(f"  Destination ({self.config.target_url}) ...")
         target_configs = self._get_target_configs()
         if target_configs is None:
-            print("[DRY RUN] Could not fetch target maintenance configurations. Aborting preview.")
+            print("  FAILED — could not fetch destination maintenance configurations.")
+            print("[DRY RUN] Aborting.")
             return self._empty_result(len(source_configs))
-        print(f"  OK ({len(target_configs)} configurations found)\n")
+        print(f"  Destination ... OK ({len(target_configs)} configurations found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return self._empty_result(len(source_configs))
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
 
         existing_ids = {c['id'] for c in target_configs if c.get('id')}
 
