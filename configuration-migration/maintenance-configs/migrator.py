@@ -10,6 +10,9 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureMaintenanceWindows"]
 
 # Fields the list endpoint returns but the create/update endpoint does not
 # accept. They are all computed by the server, so they must be dropped before
@@ -74,6 +77,9 @@ class MaintenanceConfigsMigrator:
         """
         # Validate configuration before proceeding
         self.config.validate()
+
+        if self.config.dry_run:
+            return self._dry_run()
 
         print("Starting migration of maintenance configurations...")
 
@@ -155,6 +161,116 @@ class MaintenanceConfigsMigrator:
             "updated": updated_count,
             "skipped": skipped_count,
             "failed": failed_count,
+        }
+
+    def _dry_run(self) -> Dict[str, Any]:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate()
+        """
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
+        source_configs = self._get_source_configs()
+        if source_configs is None:
+            print("  FAILED — could not fetch source maintenance configurations.")
+            print("[DRY RUN] Aborting.")
+            return self._empty_result(0)
+        print(f"  Source ... OK ({len(source_configs)} configurations found)")
+        print(f"  Destination ({self.config.target_url}) ...")
+        target_configs = self._get_target_configs()
+        if target_configs is None:
+            print("  FAILED — could not fetch destination maintenance configurations.")
+            print("[DRY RUN] Aborting.")
+            return self._empty_result(len(source_configs))
+        print(f"  Destination ... OK ({len(target_configs)} configurations found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return self._empty_result(len(source_configs))
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
+
+        existing_ids = {c['id'] for c in target_configs if c.get('id')}
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+        unmigratable: List[tuple] = []
+
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for source_config in source_configs:
+            config_id = source_config.get('id')
+            config_name = source_config.get('name', 'unknown')
+
+            if not config_id or not config_name:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: missing id or name)")
+                skipped_invalid += 1
+                continue
+
+            reason = self._unmigratable_reason(source_config)
+            if reason:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: {reason})")
+                unmigratable.append((config_name, reason))
+                skipped_invalid += 1
+                continue
+
+            payload = self._prepare_config(source_config)
+            if payload is None:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: failed payload validation)")
+                skipped_invalid += 1
+                continue
+
+            if config_id in existing_ids:
+                update_lines.append(f"  ~ Would update  '{config_name}' (exists in target)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{config_name}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+        if skip_lines:
+            print()
+            for line in skip_lines:
+                print(line)
+
+        skipped_total = skipped_invalid
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source configurations      : {len(source_configs)}")
+        print(f"  Target configurations now  : {len(target_configs)}")
+        print(f"  Would be created           : {would_create}")
+        print(f"  Would be updated           : {would_update}")
+        print(f"  Would skip                 : {skipped_total}  ({skipped_invalid} invalid/unmigratable)")
+        print(f"  Would fail                 : 0")
+        print(f"\n  Target configurations after migration would be: {len(target_configs) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        if unmigratable:
+            self._report_unmigratable(unmigratable)
+
+        return {
+            "source": len(source_configs),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped": skipped_total,
+            "failed": 0,
         }
 
     def _empty_result(self, source_count: int) -> Dict[str, Any]:

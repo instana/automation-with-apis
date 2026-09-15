@@ -9,6 +9,9 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
 
 # Import the async implementation
 try:
@@ -60,6 +63,9 @@ class CustomDashboardsMigrator:
         Returns:
             Dictionary with counts of source, migrated, updated, and skipped dashboards
         """
+        if self.config.dry_run:
+            return self._dry_run_sync()
+
         # Use async implementation if available for better performance
         if self._use_async:
             return self._async_migrator.migrate()
@@ -220,6 +226,115 @@ class CustomDashboardsMigrator:
             "migrated": migrated_count,
             "updated": updated_count,
             "skipped": skipped_count
+        }
+
+    def _dry_run_sync(self) -> Dict[str, int]:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate()
+        """
+        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
+        source_dashboards = self._get_source_dashboards()
+        if source_dashboards is None:
+            print("  FAILED — could not fetch source dashboards.")
+            print("[DRY RUN] Aborting.")
+            return _empty
+        print(f"  Source ... OK ({len(source_dashboards)} dashboards found)")
+        print(f"  Destination ({self.config.target_url}) ...")
+        target_dashboards = self._get_target_dashboards()
+        if target_dashboards is None:
+            print("  FAILED — could not fetch destination dashboards.")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_dashboards)}
+        print(f"  Destination ... OK ({len(target_dashboards)} dashboards found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_dashboards)}
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
+
+        target_titles = {d.get('title') for d in target_dashboards if d.get('title')}
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for dashboard in source_dashboards:
+            dashboard_title = dashboard.get('title')
+
+            if not dashboard_title:
+                skip_lines.append("  ✗ Would skip    (dashboard with no title)")
+                skipped_invalid += 1
+                continue
+
+            if not dashboard.get('widgets'):
+                skip_lines.append(f"  ✗ Would skip    '{dashboard_title}' (invalid: no widgets)")
+                skipped_invalid += 1
+                continue
+
+            # Check widget structure
+            widget_invalid = False
+            for idx, widget in enumerate(dashboard.get('widgets', [])):
+                missing = [f for f in ('id', 'width', 'height', 'config') if not widget.get(f)]
+                if missing:
+                    skip_lines.append(f"  ✗ Would skip    '{dashboard_title}' (invalid: widget {idx} missing {', '.join(missing)})")
+                    widget_invalid = True
+                    break
+            if widget_invalid:
+                skipped_invalid += 1
+                continue
+
+            if dashboard_title in target_titles:
+                update_lines.append(f"  ~ Would update  '{dashboard_title}' (exists in target)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{dashboard_title}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+        if skip_lines:
+            print()
+            for line in skip_lines:
+                print(line)
+
+        skipped_total = skipped_invalid
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source dashboards      : {len(source_dashboards)}")
+        print(f"  Target dashboards now  : {len(target_dashboards)}")
+        print(f"  Would be created       : {would_create}")
+        print(f"  Would be updated       : {would_update}")
+        print(f"  Would skip             : {skipped_total}  ({skipped_invalid} invalid)")
+        print(f"  Would fail             : 0")
+        print(f"\n  Target dashboards after migration would be: {len(target_dashboards) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        return {
+            "source": len(source_dashboards),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped": skipped_total,
         }
 
     def _map_users(self, source_users: List[Dict[str, Any]], target_users: List[Dict[str, Any]]) -> Dict[str, str]:
