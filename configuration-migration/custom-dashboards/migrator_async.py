@@ -176,7 +176,7 @@ class CustomDashboardsMigratorAsync:
                 return False
             elif choice in ['c', 'cancel']:
                 print("Migration cancelled by user")
-                return False
+                sys.exit(0)
             else:
                 print("Invalid choice. Please try again.")
     
