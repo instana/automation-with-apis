@@ -50,12 +50,9 @@ def check_destination_permissions(config, required_fields: list[str]) -> None:
 
     # accessGrantingToken in the response equals the token value the user
     # passes as --target-token, so we can match directly.
-    print(f"  [DEBUG] Tokens returned by list endpoint: {len(tokens)}")
     for i, t in enumerate(tokens):
         agt = t.get("accessGrantingToken", "<missing>")
         name = t.get("name", "<no name>")
-        print(f"  [DEBUG] Token[{i}] name={name!r}  accessGrantingToken={agt!r}")
-    print(f"  [DEBUG] Looking for accessGrantingToken == {config.target_token!r}")
 
     matched = next(
         (t for t in tokens if t.get("accessGrantingToken") == config.target_token),

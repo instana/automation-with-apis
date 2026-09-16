@@ -342,7 +342,6 @@ class WebsiteConfigMigrator:
         print(f"  Would be created            : {would_create}")
         print(f"  Would be updated            : {would_update}")
         print(f"  Would skip                  : {skipped_total}  ({skipped_invalid} invalid)")
-        print(f"  Would fail                  : 0")
         print(f"\n  Target website configs after migration would be: {len(target_websites) + would_create}")
         print("\n[DRY RUN] No changes were made.")
 

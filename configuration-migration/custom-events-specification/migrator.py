@@ -223,7 +223,6 @@ class EventsMigrator:
         print(f"  Would be created   : {would_create}")
         print(f"  Would be updated   : {would_update}")
         print(f"  Would skip         : {skipped_total}  ({skipped_identical} identical, {skipped_unsafe} unsafe)")
-        print(f"  Would fail         : {failed}")
         print(f"\n  Target events after migration would be: {len(target_events) + would_create}")
         print("\n[DRY RUN] No changes were made.")
 
