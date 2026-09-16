@@ -138,6 +138,9 @@ class ApplicationConfigMigrator:
         try:
             raw = api.get_application_configs_without_preload_content()
             items = json.loads(raw.read())
+            if not isinstance(items, list):
+                print(f"Error fetching {label} application configs: unexpected response (not a list): {items}")
+                return None
             for item in items:
                 bc = item.get("businessCriticality")
                 if isinstance(bc, int):

@@ -144,6 +144,9 @@ class EndpointConfigMigrator:
         try:
             raw = api.get_endpoint_configs_without_preload_content()
             items = json.loads(raw.read())
+            if not isinstance(items, list):
+                print(f"Error fetching {label} endpoint configs: unexpected response (not a list): {items}")
+                return None
             configs = []
             for item in items:
                 if item.get("endpointCase") is None:

@@ -120,6 +120,9 @@ class ServiceConfigMigrator:
         try:
             raw = api.get_service_configs_without_preload_content()
             items = json.loads(raw.read())
+            if not isinstance(items, list):
+                print(f"Error fetching {label} service configs: unexpected response (not a list): {items}")
+                return None
             configs = [ServiceConfig.from_dict(item) for item in items]
             print(f"Fetched {len(configs)} service configs from {label}.")
             return configs
