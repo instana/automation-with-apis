@@ -54,20 +54,17 @@ class TestPreparedDashboard(unittest.TestCase):
         self.loop.close()
         asyncio.set_event_loop(None)
 
-    # Bug 5: must not mutate the original dict
     def test_does_not_mutate_source(self):
         original = _make_dashboard(owner_id="src-user")
         before = copy.deepcopy(original)
         self.migrator._prepare_dashboard(original, {})
         self.assertEqual(original, before, "Source dashboard should not be mutated")
 
-    # Bug 2: ownerId is remapped when a mapping exists
     def test_owner_id_remapped_when_mapping_exists(self):
         dash = _make_dashboard(owner_id="src-user")
         result = self.migrator._prepare_dashboard(dash, {"src-user": "tgt-user"})
         self.assertEqual(result["ownerId"], "tgt-user")
 
-    # Bug 2: ownerId falls back to default_owner_id
     def test_owner_id_falls_back_to_default(self):
         cfg = _make_config(default_owner_id="default-owner")
         migrator = CustomDashboardsMigratorAsync(cfg)
@@ -75,7 +72,6 @@ class TestPreparedDashboard(unittest.TestCase):
         result = migrator._prepare_dashboard(dash, {})  # no mapping
         self.assertEqual(result["ownerId"], "default-owner")
 
-    # Bug 2: ownerId is dropped when no mapping and no default
     def test_owner_id_deleted_when_no_mapping_and_no_default(self):
         dash = _make_dashboard(owner_id="src-user")
         result = self.migrator._prepare_dashboard(dash, {})
@@ -161,7 +157,6 @@ class TestPromptForOverrideStrategy(unittest.TestCase):
         self.migrator.config.on_duplicate = "skip"
         self.assertFalse(self.migrator._prompt_for_override_strategy())
 
-    # Bug 7: cancel must return False, not call sys.exit
     def test_cancel_returns_false_not_sys_exit(self):
         self.migrator.config.on_duplicate = "ask"
         with patch("sys.stdin") as mock_stdin:
@@ -179,7 +174,6 @@ class TestPromptForOverrideStrategy(unittest.TestCase):
 
 
 class TestGetSourceDashboardsFromFile(unittest.TestCase):
-    """Bug 8: file-source mode must be implemented."""
 
     def setUp(self):
         self.loop = asyncio.new_event_loop()
@@ -235,7 +229,6 @@ class TestCreateOrUpdateDashboardAsync(unittest.IsolatedAsyncioTestCase):
         resp.__aexit__ = AsyncMock(return_value=False)
         return resp
 
-    # Bug 9: identical content → 'skipped' even when override=True
     async def test_skips_when_content_identical(self):
         migrator = self._make_migrator()
         widgets = [{"id": "w1", "width": 2, "height": 2, "config": {}}]
@@ -248,7 +241,6 @@ class TestCreateOrUpdateDashboardAsync(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result, "skipped")
 
-    # Bug 9: different content → update is triggered
     async def test_updates_when_content_differs(self):
         migrator = self._make_migrator()
         source_widgets = [{"id": "w1", "width": 2, "height": 2, "config": {"new": True}}]
@@ -298,7 +290,6 @@ class TestCreateOrUpdateDashboardAsync(unittest.IsolatedAsyncioTestCase):
 
 
 class TestMigrateDashboardsAsync(unittest.IsolatedAsyncioTestCase):
-    """Bug 10: failed counter is tracked in the return dict."""
 
     async def test_failed_counted_in_results(self):
         migrator = CustomDashboardsMigratorAsync(_make_config())
@@ -325,7 +316,6 @@ class TestMigrateDashboardsAsync(unittest.IsolatedAsyncioTestCase):
 
 
 class TestFindDashboardIdByTitleAsync(unittest.IsolatedAsyncioTestCase):
-    """Bug 4: bare except replaced with logged except."""
 
     async def test_returns_none_and_logs_on_exception(self):
         migrator = CustomDashboardsMigratorAsync(_make_config())

@@ -68,7 +68,7 @@ class CustomDashboardsMigratorAsync:
                 target_dashboards = []
             
             # Build a map of existing dashboard titles to full dicts for duplicate
-            # detection and content-equality checks (Bug 3, Bug 9).
+            # detection and content-equality checks
             existing_dashboards = {d['title']: d for d in target_dashboards if 'title' in d and 'id' in d}
             print(f"Found {len(existing_dashboards)} existing dashboards in target")
 
@@ -199,7 +199,7 @@ class CustomDashboardsMigratorAsync:
             print("Skipping dashboard with no title")
             return None
 
-        # Work on a copy so the caller's dict is never mutated (Bug 5)
+        # Work on a copy so the caller's dict is never mutated
         dashboard = copy.deepcopy(dashboard)
 
         # Remove the 'owner' field if it exists
@@ -208,7 +208,7 @@ class CustomDashboardsMigratorAsync:
         
         # Remap ownerId to the corresponding target user; fall back to
         # default_owner_id when no mapping exists, and only drop it when
-        # neither is available (Bug 2).
+        # neither is available
         source_owner_id = dashboard.get('ownerId')
         if source_owner_id is not None:
             target_owner_id = user_map.get(source_owner_id, self.config.default_owner_id)
@@ -253,7 +253,7 @@ class CustomDashboardsMigratorAsync:
         return dashboard
 
     def _get_source_dashboards_from_file(self) -> Optional[List[Dict[str, Any]]]:
-        """Load source dashboards from a local JSON file (Bug 8).
+        """Load source dashboards from a local JSON file
 
         Args:
             (uses self.config.events_file_path)
@@ -378,7 +378,7 @@ class CustomDashboardsMigratorAsync:
 
         The list endpoint returns summary objects only.  Full details are
         fetched individually so that content-equality comparisons work
-        correctly (Bug 3).
+        correctly.
         
         Args:
             client: Async HTTP client
@@ -496,7 +496,7 @@ class CustomDashboardsMigratorAsync:
         """Create dashboard, or update if it exists and override is enabled.
 
         existing_dashboards maps title → full target dashboard dict so that
-        a content-equality check (Bug 9) can be performed without an extra
+        a content-equality check can be performed without an extra
         network round-trip.
         
         Args:
@@ -515,7 +515,7 @@ class CustomDashboardsMigratorAsync:
             existing_dashboard = existing_dashboards[dashboard_title]
             existing_id = existing_dashboard['id']
             if override_existing:
-                # Content-equality check: skip the PUT when nothing changed (Bug 9)
+                # Content-equality check: skip the PUT when nothing changed
                 source_widgets = dashboard.get('widgets')
                 target_widgets = existing_dashboard.get('widgets')
                 if source_widgets == target_widgets:
