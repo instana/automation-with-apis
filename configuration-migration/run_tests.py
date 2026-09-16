@@ -28,7 +28,10 @@ def run_tests():
         'tests/test_alert_configs_migrator.py',
         'tests/test_custom_dashboards_migrator.py',
         'tests/test_maintenance_configs_migrator.py',
-        'tests/test_website_configs_migrator.py'
+        'tests/test_website_configs_migrator.py',
+        'tests/test_application_configs_migrator.py',
+        'tests/test_service_configs_migrator.py',
+        'tests/test_endpoint_configs_migrator.py'
     ]
     
     total_passed = 0
