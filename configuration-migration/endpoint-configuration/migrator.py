@@ -17,33 +17,12 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
+from utils import MigrationResult, build_api, empty_result, make_result, partial_result, prompt_duplicate
 
 from typing import Dict, List, Optional
 
-import instana_client
 from instana_client.api.application_settings_api import ApplicationSettingsApi
 from instana_client.models.endpoint_config import EndpointConfig
-
-
-def _build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
-    """Create a configured ApplicationSettingsApi client.
-
-    Args:
-        url: Base URL of the Instana backend.
-        token: API token for authentication.
-        verify_ssl: Whether to verify SSL certificates.
-
-    Returns:
-        Configured ApplicationSettingsApi instance.
-    """
-    configuration = instana_client.Configuration(
-        host=url,
-        api_key={"ApiKeyAuth": token},
-        api_key_prefix={"ApiKeyAuth": "apiToken"},
-    )
-    configuration.verify_ssl = verify_ssl
-    api_client = instana_client.ApiClient(configuration)
-    return ApplicationSettingsApi(api_client)
 
 
 class EndpointConfigMigrator:
@@ -59,7 +38,7 @@ class EndpointConfigMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of endpoint configurations.
 
         Returns:
@@ -69,20 +48,20 @@ class EndpointConfigMigrator:
 
         print("Starting migration of endpoint configurations...")
 
-        source_api = _build_api(
+        source_api = build_api(
             self.config.source_url, self.config.source_token, self.config.verify_ssl
         )
-        target_api = _build_api(
+        target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
 
         source_configs = self._get_configs(source_api, "source")
         if source_configs is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+            return empty_result()
 
         target_configs = self._get_configs(target_api, "target")
         if target_configs is None:
-            return {"source": len(source_configs), "migrated": 0, "updated": 0, "skipped": 0}
+            return partial_result(len(source_configs))
 
         # Index target configs by serviceId for fast lookup
         target_by_service_id: Dict[str, EndpointConfig] = {
@@ -112,7 +91,7 @@ class EndpointConfigMigrator:
                     )
                     skipped_count += 1
                 else:
-                    choice = self._prompt_duplicate(service_id)
+                    choice = prompt_duplicate("Endpoint config for service", service_id)
                     if choice == "skip":
                         skipped_count += 1
                     elif choice == "update":
@@ -136,12 +115,7 @@ class EndpointConfigMigrator:
             f"Migration complete. Found {source_count} source endpoint configs, "
             f"migrated {migrated_count}, updated {updated_count}, skipped {skipped_count}."
         )
-        return {
-            "source": source_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped": skipped_count,
-        }
+        return make_result(source_count, migrated_count, updated_count, skipped_count)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -255,31 +229,3 @@ class EndpointConfigMigrator:
             )
             return False
 
-    def _prompt_duplicate(self, service_id: str) -> str:
-        """Prompt the user for an action when a duplicate is found.
-
-        Args:
-            service_id: Service ID of the duplicate endpoint config.
-
-        Returns:
-            One of 'skip', 'update', or 'cancel'.
-        """
-        if not sys.stdin.isatty():
-            print(f"Non-interactive mode: skipping duplicate for service '{service_id}'.")
-            return "skip"
-
-        while True:
-            print(
-                f"\nEndpoint config for service '{service_id}' already exists in the target."
-            )
-            print("  [s] Skip")
-            print("  [u] Update existing config")
-            print("  [c] Cancel migration")
-            choice = input("Enter your choice [s/u/c]: ").strip().lower()
-            if choice in ("s", "skip"):
-                return "skip"
-            elif choice in ("u", "update"):
-                return "update"
-            elif choice in ("c", "cancel"):
-                return "cancel"
-            print("Invalid choice. Please try again.")

@@ -10,10 +10,10 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
+from utils import MigrationResult, build_api, empty_result, make_result, partial_result, print_api_error, prompt_duplicate
 
 from typing import Dict, List, Optional
 
-import instana_client
 from instana_client.api.application_settings_api import ApplicationSettingsApi
 from instana_client.exceptions import ApiException
 from instana_client.models.application_config import ApplicationConfig
@@ -36,47 +36,6 @@ _BUSINESS_CRITICALITY_STR_TO_INT: Dict[str, int] = {
 }
 
 
-def _print_api_error(prefix: str, e: ApiException) -> None:
-    """Print a concise error message from an ApiException.
-
-    Extracts just the HTTP status and the response body (which typically
-    contains the server-side error detail) rather than dumping full headers.
-
-    Args:
-        prefix: Message prefix, e.g. "✗ Failed to migrate config 'foo'".
-        e: The ApiException to summarise.
-    """
-    body = e.body or ""
-    try:
-        import json as _json
-        parsed = _json.loads(body)
-        detail = parsed.get("details") or parsed.get("message") or body
-    except Exception:
-        detail = body
-    print(f"{prefix}: HTTP {e.status} - {detail}")
-
-
-def _build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
-    """Create a configured ApplicationSettingsApi client.
-
-    Args:
-        url: Base URL of the Instana backend.
-        token: API token for authentication.
-        verify_ssl: Whether to verify SSL certificates.
-
-    Returns:
-        Configured ApplicationSettingsApi instance.
-    """
-    configuration = instana_client.Configuration(
-        host=url,
-        api_key={"ApiKeyAuth": token},
-        api_key_prefix={"ApiKeyAuth": "apiToken"},
-    )
-    configuration.verify_ssl = verify_ssl
-    api_client = instana_client.ApiClient(configuration)
-    return ApplicationSettingsApi(api_client)
-
-
 class ApplicationConfigMigrator:
     """Handles migration of application configurations (Application Perspectives) between backends."""
 
@@ -90,7 +49,7 @@ class ApplicationConfigMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of application configurations.
 
         Returns:
@@ -100,20 +59,20 @@ class ApplicationConfigMigrator:
 
         print("Starting migration of application configurations...")
 
-        source_api = _build_api(
+        source_api = build_api(
             self.config.source_url, self.config.source_token, self.config.verify_ssl
         )
-        target_api = _build_api(
+        target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
 
         source_configs = self._get_configs(source_api, "source")
         if source_configs is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+            return empty_result()
 
         target_configs = self._get_configs(target_api, "target")
         if target_configs is None:
-            return {"source": len(source_configs), "migrated": 0, "updated": 0, "skipped": 0}
+            return partial_result(len(source_configs))
 
         target_labels = {cfg.label for cfg in target_configs}
 
@@ -136,7 +95,7 @@ class ApplicationConfigMigrator:
                     print(f"⊘ Application config '{label}' already exists, skipping...")
                     skipped_count += 1
                 else:
-                    choice = self._prompt_duplicate(label)
+                    choice = prompt_duplicate("Application config", label)
                     if choice == "skip":
                         skipped_count += 1
                     elif choice == "update":
@@ -158,12 +117,7 @@ class ApplicationConfigMigrator:
             f"Migration complete. Found {source_count} source application configs, "
             f"migrated {migrated_count}, updated {updated_count}, skipped {skipped_count}."
         )
-        return {
-            "source": source_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped": skipped_count,
-        }
+        return make_result(source_count, migrated_count, updated_count, skipped_count)
 
     def _get_configs(
         self, api: ApplicationSettingsApi, label: str
@@ -256,7 +210,7 @@ class ApplicationConfigMigrator:
             print(f"✓ Migrated application config '{cfg.label}' ({id_str})")
             return True
         except ApiException as e:
-            _print_api_error(f"✗ Failed to migrate application config '{cfg.label}'", e)
+            print_api_error(f"✗ Failed to migrate application config '{cfg.label}'", e)
             return False
         except Exception as e:
             print(f"✗ Failed to migrate application config '{cfg.label}': {e}")
@@ -299,35 +253,9 @@ class ApplicationConfigMigrator:
             print(f"✓ Updated application config '{cfg.label}' ({id_str})")
             return True
         except ApiException as e:
-            _print_api_error(f"✗ Failed to update application config '{cfg.label}'", e)
+            print_api_error(f"✗ Failed to update application config '{cfg.label}'", e)
             return False
         except Exception as e:
             print(f"✗ Failed to update application config '{cfg.label}': {e}")
             return False
 
-    def _prompt_duplicate(self, label: str) -> str:
-        """Prompt the user for an action when a duplicate is found.
-
-        Args:
-            label: Name of the duplicate config.
-
-        Returns:
-            One of 'skip', 'update', or 'cancel'.
-        """
-        if not sys.stdin.isatty():
-            print(f"Non-interactive mode: skipping duplicate '{label}'.")
-            return "skip"
-
-        while True:
-            print(f"\nApplication config '{label}' already exists in the target.")
-            print("  [s] Skip")
-            print("  [u] Update existing config")
-            print("  [c] Cancel migration")
-            choice = input("Enter your choice [s/u/c]: ").strip().lower()
-            if choice in ("s", "skip"):
-                return "skip"
-            elif choice in ("u", "update"):
-                return "update"
-            elif choice in ("c", "cancel"):
-                return "cancel"
-            print("Invalid choice. Please try again.")
