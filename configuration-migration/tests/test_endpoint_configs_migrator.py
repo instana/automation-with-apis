@@ -10,6 +10,7 @@ import pytest
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "endpoint-configuration"))
 from migrator import EndpointConfigMigrator
+from utils import prompt_duplicate
 from config import Config
 
 
@@ -254,31 +255,31 @@ class TestEndpointConfigMigrator:
 
         assert self.migrator._update_config(api, src, tgt) is False
 
-    # ── _prompt_duplicate ──────────────────────────────────────────────────────
+    # ── prompt_duplicate ───────────────────────────────────────────────────────
 
-    @patch("migrator.sys.stdin.isatty", return_value=False)
+    @patch("utils.sys.stdin.isatty", return_value=False)
     def test_prompt_non_interactive_returns_skip(self, _):
-        assert self.migrator._prompt_duplicate("svc-1") == "skip"
+        assert prompt_duplicate("Endpoint config for service", "svc-1") == "skip"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="s")
     def test_prompt_interactive_s_returns_skip(self, _, __):
-        assert self.migrator._prompt_duplicate("svc-1") == "skip"
+        assert prompt_duplicate("Endpoint config for service", "svc-1") == "skip"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="u")
     def test_prompt_interactive_u_returns_update(self, _, __):
-        assert self.migrator._prompt_duplicate("svc-1") == "update"
+        assert prompt_duplicate("Endpoint config for service", "svc-1") == "update"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="c")
     def test_prompt_interactive_c_returns_cancel(self, _, __):
-        assert self.migrator._prompt_duplicate("svc-1") == "cancel"
+        assert prompt_duplicate("Endpoint config for service", "svc-1") == "cancel"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", side_effect=["nope", "cancel"])
     def test_prompt_retries_on_invalid_then_accepts_full_word(self, _, __):
-        assert self.migrator._prompt_duplicate("svc-1") == "cancel"
+        assert prompt_duplicate("Endpoint config for service", "svc-1") == "cancel"
 
     # ── migrate() ─────────────────────────────────────────────────────────────
 

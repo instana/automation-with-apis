@@ -13,8 +13,8 @@ from migrator import (
     ApplicationConfigMigrator,
     _BUSINESS_CRITICALITY_INT_TO_STR,
     _BUSINESS_CRITICALITY_STR_TO_INT,
-    _print_api_error,
 )
+from utils import print_api_error, prompt_duplicate
 from config import Config
 
 from instana_client.exceptions import ApiException
@@ -96,12 +96,12 @@ class TestApplicationConfigMigrator:
         for i, s in _BUSINESS_CRITICALITY_INT_TO_STR.items():
             assert _BUSINESS_CRITICALITY_STR_TO_INT[s] == i
 
-    # ── _print_api_error ───────────────────────────────────────────────────────
+    # ── print_api_error ───────────────────────────────────────────────────────
 
     def test_print_api_error_extracts_details(self, capsys):
         exc = ApiException(status=422, reason="Unprocessable Entity")
         exc.body = json.dumps({"details": "field x is required"})
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         out = capsys.readouterr().out
         assert "422" in out
         assert "field x is required" in out
@@ -109,19 +109,19 @@ class TestApplicationConfigMigrator:
     def test_print_api_error_falls_back_to_message(self, capsys):
         exc = ApiException(status=400, reason="Bad Request")
         exc.body = json.dumps({"message": "bad payload"})
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         assert "bad payload" in capsys.readouterr().out
 
     def test_print_api_error_handles_non_json_body(self, capsys):
         exc = ApiException(status=500, reason="Internal Server Error")
         exc.body = "raw error text"
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         assert "raw error text" in capsys.readouterr().out
 
     def test_print_api_error_handles_empty_body(self, capsys):
         exc = ApiException(status=503, reason="Service Unavailable")
         exc.body = ""
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         assert "503" in capsys.readouterr().out
 
     # ── _get_configs ───────────────────────────────────────────────────────────
@@ -309,31 +309,31 @@ class TestApplicationConfigMigrator:
 
         assert result is False
 
-    # ── _prompt_duplicate ──────────────────────────────────────────────────────
+    # ── prompt_duplicate ───────────────────────────────────────────────────────
 
-    @patch("migrator.sys.stdin.isatty", return_value=False)
+    @patch("utils.sys.stdin.isatty", return_value=False)
     def test_prompt_non_interactive_returns_skip(self, _):
-        assert self.migrator._prompt_duplicate("App A") == "skip"
+        assert prompt_duplicate("Application config", "App A") == "skip"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="s")
     def test_prompt_interactive_s_returns_skip(self, _, __):
-        assert self.migrator._prompt_duplicate("App A") == "skip"
+        assert prompt_duplicate("Application config", "App A") == "skip"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="u")
     def test_prompt_interactive_u_returns_update(self, _, __):
-        assert self.migrator._prompt_duplicate("App A") == "update"
+        assert prompt_duplicate("Application config", "App A") == "update"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="c")
     def test_prompt_interactive_c_returns_cancel(self, _, __):
-        assert self.migrator._prompt_duplicate("App A") == "cancel"
+        assert prompt_duplicate("Application config", "App A") == "cancel"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", side_effect=["invalid", "u"])
     def test_prompt_retries_on_invalid_input(self, _, __):
-        assert self.migrator._prompt_duplicate("App A") == "update"
+        assert prompt_duplicate("Application config", "App A") == "update"
 
     # ── migrate() ─────────────────────────────────────────────────────────────
 

@@ -132,32 +132,36 @@ class TestEventsMigrator:
         
         assert events is None
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch('builtins.input', return_value='s')
-    def test_prompt_for_duplicate_event_skip(self, mock_input):
+    def test_prompt_for_duplicate_event_skip(self, mock_input, _):
         """Test prompting for duplicate event - skip choice."""
         choice = self.migrator._prompt_for_duplicate_event("Test Event")
         
         assert choice == "skip"
         mock_input.assert_called_once()
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch('builtins.input', return_value='u')
-    def test_prompt_for_duplicate_event_update(self, mock_input):
+    def test_prompt_for_duplicate_event_update(self, mock_input, _):
         """Test prompting for duplicate event - update choice."""
         choice = self.migrator._prompt_for_duplicate_event("Test Event")
         
         assert choice == "update"
         mock_input.assert_called_once()
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch('builtins.input', return_value='c')
-    def test_prompt_for_duplicate_event_cancel(self, mock_input):
+    def test_prompt_for_duplicate_event_cancel(self, mock_input, _):
         """Test prompting for duplicate event - cancel choice."""
         choice = self.migrator._prompt_for_duplicate_event("Test Event")
         
         assert choice == "cancel"
         mock_input.assert_called_once()
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch('builtins.input', side_effect=['invalid', 's'])
-    def test_prompt_for_duplicate_event_invalid_then_valid(self, mock_input):
+    def test_prompt_for_duplicate_event_invalid_then_valid(self, mock_input, _):
         """Test prompting for duplicate event - invalid input then valid."""
         choice = self.migrator._prompt_for_duplicate_event("Test Event")
         

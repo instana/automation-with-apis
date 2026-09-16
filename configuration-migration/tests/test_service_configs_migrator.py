@@ -9,7 +9,8 @@ import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "service-configuration"))
-from migrator import ServiceConfigMigrator, _print_api_error
+from migrator import ServiceConfigMigrator
+from utils import print_api_error, prompt_duplicate
 from config import Config
 
 from instana_client.exceptions import ApiException
@@ -71,12 +72,12 @@ class TestServiceConfigMigrator:
         ServiceConfigMigrator(self.config)
         mock_dw.assert_not_called()
 
-    # ── _print_api_error ───────────────────────────────────────────────────────
+    # ── print_api_error ───────────────────────────────────────────────────────
 
     def test_print_api_error_extracts_details(self, capsys):
         exc = ApiException(status=422, reason="Unprocessable Entity")
         exc.body = json.dumps({"details": "name is required"})
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         out = capsys.readouterr().out
         assert "422" in out
         assert "name is required" in out
@@ -84,19 +85,19 @@ class TestServiceConfigMigrator:
     def test_print_api_error_falls_back_to_message(self, capsys):
         exc = ApiException(status=400, reason="Bad Request")
         exc.body = json.dumps({"message": "bad payload"})
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         assert "bad payload" in capsys.readouterr().out
 
     def test_print_api_error_handles_non_json_body(self, capsys):
         exc = ApiException(status=500, reason="Internal Server Error")
         exc.body = "raw error text"
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         assert "raw error text" in capsys.readouterr().out
 
     def test_print_api_error_handles_empty_body(self, capsys):
         exc = ApiException(status=503, reason="Service Unavailable")
         exc.body = ""
-        _print_api_error("✗ Prefix", exc)
+        print_api_error("✗ Prefix", exc)
         assert "503" in capsys.readouterr().out
 
     # ── _get_configs ───────────────────────────────────────────────────────────
@@ -259,31 +260,31 @@ class TestServiceConfigMigrator:
 
         assert self.migrator._update_config(api, src, [tgt]) is False
 
-    # ── _prompt_duplicate ──────────────────────────────────────────────────────
+    # ── prompt_duplicate ───────────────────────────────────────────────────────
 
-    @patch("migrator.sys.stdin.isatty", return_value=False)
+    @patch("utils.sys.stdin.isatty", return_value=False)
     def test_prompt_non_interactive_returns_skip(self, _):
-        assert self.migrator._prompt_duplicate("My Service") == "skip"
+        assert prompt_duplicate("Service config", "My Service") == "skip"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="s")
     def test_prompt_interactive_s_returns_skip(self, _, __):
-        assert self.migrator._prompt_duplicate("My Service") == "skip"
+        assert prompt_duplicate("Service config", "My Service") == "skip"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="u")
     def test_prompt_interactive_u_returns_update(self, _, __):
-        assert self.migrator._prompt_duplicate("My Service") == "update"
+        assert prompt_duplicate("Service config", "My Service") == "update"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="c")
     def test_prompt_interactive_c_returns_cancel(self, _, __):
-        assert self.migrator._prompt_duplicate("My Service") == "cancel"
+        assert prompt_duplicate("Service config", "My Service") == "cancel"
 
-    @patch("migrator.sys.stdin.isatty", return_value=True)
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", side_effect=["bad", "skip"])
     def test_prompt_retries_on_invalid_then_accepts_full_word(self, _, __):
-        assert self.migrator._prompt_duplicate("My Service") == "skip"
+        assert prompt_duplicate("Service config", "My Service") == "skip"
 
     # ── migrate() ─────────────────────────────────────────────────────────────
 
