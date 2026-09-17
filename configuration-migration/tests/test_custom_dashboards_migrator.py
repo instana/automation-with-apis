@@ -1,4 +1,5 @@
 
+import asyncio
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
@@ -15,6 +16,10 @@ from config import Config
 class TestCustomDashboardsMigrator(unittest.TestCase):
 
     def setUp(self):
+        # asyncio.Semaphore (inside CustomDashboardsMigratorAsync.__init__) needs
+        # a running event loop on Python 3.9 even when we force sync mode below.
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
         self.config = Config()
         self.config.source_token = "test"
         self.config.source_url = "http://test.com"
@@ -26,6 +31,10 @@ class TestCustomDashboardsMigrator(unittest.TestCase):
         self.migrator._use_async = False
         self.migrator.req_custom_dashboards = "/api/custom-dashboard"
         self.migrator.req_shareable_users = "/api/settings/users"
+
+    def tearDown(self):
+        self.loop.close()
+        asyncio.set_event_loop(None)
 
     @patch('requests.get')
     def test_get_source_dashboards(self, mock_get):
