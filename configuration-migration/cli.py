@@ -128,6 +128,18 @@ def main():
         website_configs_parser.add_argument('--events-file-path', help='Path to the website configs JSON file (when using file source)')
         website_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate website is found (default: ask)')
 
+         # Mobile app configs migrator
+        mobile_app_configs_parser = subparsers.add_parser('mobile-app-configs', help='Migrate mobile app monitoring configurations')
+        mobile_app_configs_parser.add_argument('--config-file', help='Path to configuration file')
+        mobile_app_configs_parser.add_argument('--source-token', help='API token for source backend')
+        mobile_app_configs_parser.add_argument('--source-url', help='URL for source backend')
+        mobile_app_configs_parser.add_argument('--target-token', help='API token for target backend')
+        mobile_app_configs_parser.add_argument('--target-url', help='URL for target backend')
+        mobile_app_configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        mobile_app_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for mobile app configs (api or file)')
+        mobile_app_configs_parser.add_argument('--events-file-path', help='Path to the mobile app configs JSON file (when using file source)')
+        mobile_app_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate mobile app is found (default: ask)')
+
         # Parse arguments
         args = parser.parse_args()
         
@@ -268,6 +280,20 @@ def main():
                 sys.exit(0)
             else:
                 # Exit with error code if no websites were migrated
+                sys.exit(1)
+
+        elif args.command == 'mobile-app-configs':
+            # Import and run the mobile app configs migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'mobile-app-configs'))
+            from migrator import MobileAppConfigMigrator
+            migrator = MobileAppConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one mobile app was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                # Exit with error code if no mobile apps were migrated
                 sys.exit(1)
 
     except ValueError as e:
