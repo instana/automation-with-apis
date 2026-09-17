@@ -10,6 +10,7 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from utils import prompt_duplicate
 
 # Fields the list endpoint returns but the create/update endpoint does not
 # accept. They are all computed by the server, so they must be dropped before
@@ -507,27 +508,7 @@ class MaintenanceConfigsMigrator:
         if self.config.on_duplicate != "ask":
             return self.config.on_duplicate
 
-        if not sys.stdin.isatty():
-            print(f"Non-interactive mode: Skipping duplicate maintenance configuration '{config_name}'.")
-            return 'skip'
-
-        while True:
-            print(f"\nMaintenance configuration '{config_name}' already exists in the target system.")
-            print("Choose an action:")
-            print("  [s] Skip")
-            print("  [u] Update it with the source version")
-            print("  [c] Cancel migration")
-
-            choice = input("Enter your choice [s/u/c]: ").lower()
-
-            if choice in ['s', 'skip']:
-                return 'skip'
-            elif choice in ['u', 'update']:
-                return 'update'
-            elif choice in ['c', 'cancel']:
-                return 'cancel'
-            else:
-                print("Invalid choice. Please try again.")
+        return prompt_duplicate("Maintenance configuration", config_name)
 
     # ------------------------------------------------------------------
     # Helpers

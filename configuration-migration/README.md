@@ -1,6 +1,6 @@
 # Instana Configuration Migration Tool
 
-A comprehensive, enterprise-grade tool for migrating Instana configurations between different environments, instances, and organizations. This tool streamlines the process of moving custom events, alert channels, alert configurations, and other Instana resources across your infrastructure.
+A comprehensive, enterprise-grade tool for migrating Instana configurations between different environments, instances, and organizations. This tool streamlines the process of moving custom events, alert channels, alert configurations, application and service configurations, and other Instana resources across your infrastructure.
 
 ## Overview
 
@@ -32,7 +32,28 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 - **Time windows** and evaluation periods
 - **Integration mappings** to alert channels
 
-### 4. Maintenance Configurations
+### 4. Application Configurations (Application Perspectives)
+- **Application Perspectives** with boundary scope and match specifications
+- **Access rules** and business criticality
+- **Tag filter expressions**
+- **Duplicate detection** (skip, update, ask)
+
+### 5. Service Configurations
+- **Custom service rules** with match specifications
+- **Service labels** and comments
+- **Duplicate detection** (skip, update, ask)
+
+### 6. Endpoint Configurations
+- **Custom endpoint mapping rules** per service
+- **Endpoint case**, path template rules, and first-path-segment rules
+- **Scoped by service ID**; use `--on-duplicate update` when source and target share the same service IDs
+
+### 7. Custom Dashboards
+- **Dashboard widgets**, layouts, and access rules
+- **User mapping** from source to target by email
+- **Async migration** for improved performance (falls back to sync)
+
+### 8. Maintenance Configurations
 - **Maintenance windows**, one-time and recurring
 - **Schedules** including recurrence rules and time zones
 - **Scope queries** and tag filter expressions
@@ -40,7 +61,7 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 
 See [maintenance-configs/README.md](maintenance-configs/README.md) for details.
 
-### 5. Website Configurations
+### 9. Website Configurations
 - **Website monitoring configurations** and endpoints
 - **Name matching** and duplicate detection (skip, update, cancel)
 - **Source-to-target ID mapping**
@@ -165,6 +186,71 @@ uv run cli.py configs --events-source api --events-file-path my_alert_configs.js
                       --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
 ```
 
+#### Application Configurations Migration
+
+```bash
+# Basic usage
+uv run cli.py applications --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com \
+                           --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com
+
+# Skip existing application configs
+uv run cli.py applications --on-duplicate skip --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Update existing application configs
+uv run cli.py applications --on-duplicate update --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Disable SSL verification
+uv run cli.py applications --no-verify-ssl --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+```
+
+#### Service Configurations Migration
+
+```bash
+# Basic usage
+uv run cli.py services --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com \
+                       --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com
+
+# Skip existing service configs
+uv run cli.py services --on-duplicate skip --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Update existing service configs
+uv run cli.py services --on-duplicate update --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Disable SSL verification
+uv run cli.py services --no-verify-ssl --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+```
+
+#### Endpoint Configurations Migration
+
+```bash
+# Basic usage
+uv run cli.py endpoints --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com \
+                        --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com
+
+# Update existing endpoint configs (use when source and target share the same service IDs)
+uv run cli.py endpoints --on-duplicate update --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Disable SSL verification
+uv run cli.py endpoints --no-verify-ssl --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+```
+
+#### Custom Dashboards Migration
+
+```bash
+# Basic usage
+uv run cli.py custom-dashboards --source-token YOUR_SOURCE_TOKEN --source-url https://source-backend.example.com \
+                                --target-token YOUR_TARGET_TOKEN --target-url https://target-backend.example.com
+
+# Skip existing dashboards
+uv run cli.py custom-dashboards --on-duplicate skip --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Update existing dashboards
+uv run cli.py custom-dashboards --on-duplicate update --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+
+# Disable SSL verification
+uv run cli.py custom-dashboards --no-verify-ssl --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
+```
+
 #### Maintenance Configurations Migration
 
 ```bash
@@ -260,25 +346,45 @@ The tool uses the following priority order for configuration (highest to lowest)
 ```
 configuration-migration/
 ├── config.py                    # Common configuration for all migrators
+├── utils.py                     # Shared utilities (build_api, print_api_error, prompt_duplicate, MigrationResult)
 ├── cli.py                       # Unified CLI for all migrators
 ├── config.ini                   # Common configuration file
 ├── requirements.txt             # Python dependencies
 ├── setup.py                     # Package setup
 ├── MANIFEST.in                  # Package manifest
 ├── source_events.json           # Sample custom events data
-├── sample_alert_channels.json   # Sample alert channels data
-├── sample_alert_configs.json    # Sample alert configurations data
 ├── custom-events-specification/
 │   └── migrator.py              # Custom events migrator
 ├── alert-channels/
 │   └── migrator.py              # Alert channels migrator
 ├── alert-configs/
 │   └── migrator.py              # Alert configurations migrator
+├── application-configuration/
+│   └── migrator.py              # Application Perspectives migrator (instana_client SDK)
+├── service-configuration/
+│   └── migrator.py              # Service configurations migrator (instana_client SDK)
+├── endpoint-configuration/
+│   └── migrator.py              # Endpoint configurations migrator (instana_client SDK)
+├── custom-dashboards/
+│   ├── migrator.py              # Custom dashboards migrator (async + sync fallback)
+│   └── migrator_async.py        # Async implementation for improved performance
 ├── maintenance-configs/
 │   ├── migrator.py              # Maintenance configurations migrator
 │   └── README.md                # Maintenance configurations guide
-└── website-configs/
-    └── migrator.py              # Website configurations migrator
+├── website-configs/
+│   └── migrator.py              # Website configurations migrator
+└── tests/
+    ├── test_config.py
+    ├── test_cli.py
+    ├── test_events_migrator.py
+    ├── test_alert_channels_migrator.py
+    ├── test_alert_configs_migrator.py
+    ├── test_application_configs_migrator.py
+    ├── test_service_configs_migrator.py
+    ├── test_endpoint_configs_migrator.py
+    ├── test_custom_dashboards_migrator.py
+    ├── test_maintenance_configs_migrator.py
+    └── test_website_configs_migrator.py
 ```
 
 ## Features
@@ -431,7 +537,7 @@ uv run python run_tests.py
 ```
 
 This command will:
-- Run all tests across 6 test files individually
+- Run all tests across 11 test files individually
 - Provide detailed pass/fail status for each test
 - Generate coverage reports
 - Display comprehensive test summary
@@ -441,16 +547,17 @@ This command will:
 #### Test Files
 ```
 tests/
-├── test_config.py                        # Configuration management tests
-├── test_events_migrator.py               # Custom events migrator tests
-├── test_alert_channels_migrator.py       # Alert channels migrator tests
-├── test_alert_configs_migrator.py        # Alert configs migrator tests
-├── test_custom_dashboards_migrator.py    # Custom dashboards migrator tests
-├── test_maintenance_configs_migrator.py  # Maintenance configs migrator tests
-├── test_website_configs_migrator.py      # Website configs migrator tests
-├── test_cli.py                           # CLI interface tests
-├── conftest.py                           # Shared test fixtures
-└── __init__.py                           # Package initialization
+├── test_config.py                          # Configuration management tests
+├── test_cli.py                             # CLI interface tests
+├── test_events_migrator.py                 # Custom events migrator tests
+├── test_alert_channels_migrator.py         # Alert channels migrator tests
+├── test_alert_configs_migrator.py          # Alert configs migrator tests
+├── test_application_configs_migrator.py    # Application configs migrator tests
+├── test_service_configs_migrator.py        # Service configs migrator tests
+├── test_endpoint_configs_migrator.py       # Endpoint configs migrator tests
+├── test_custom_dashboards_migrator.py      # Custom dashboards migrator tests
+├── test_maintenance_configs_migrator.py    # Maintenance configs migrator tests
+└── test_website_configs_migrator.py        # Website configs migrator tests
 ```
 
 #### Test Categories

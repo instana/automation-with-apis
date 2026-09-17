@@ -10,6 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from utils import prompt_duplicate
 
 
 class EventsMigrator:
@@ -213,25 +214,9 @@ class EventsMigrator:
             event_name: Name of the duplicate event
             
         Returns:
-            User choice: 'skip', 'migrate', or 'cancel'
+            User choice: 'skip', 'update', or 'cancel'
         """
-        while True:
-            print(f"\nEvent '{event_name}' already exists in the target system.")
-            print("Choose an action:")
-            print("  [s] Skip")
-            print("  [u] Update existing event")
-            print("  [c] Cancel migration")
-            
-            choice = input("Enter your choice [s/u/c]: ").lower()
-            
-            if choice in ['s', 'skip']:
-                return 'skip'
-            elif choice in ['u', 'update']:
-                return 'update'
-            elif choice in ['c', 'cancel']:
-                return 'cancel'
-            else:
-                print("Invalid choice. Please try again.")
+        return prompt_duplicate("Event", event_name)
     
     def _create_event(self, event: Dict[str, Any], event_name: str) -> bool:
         """Create a custom event in the target backend.

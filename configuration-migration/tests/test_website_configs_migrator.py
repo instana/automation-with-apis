@@ -253,26 +253,30 @@ class TestWebsiteConfigMigrator:
         self.config.on_duplicate = "cancel"
         assert self.migrator._prompt_for_duplicate_website("Site A") == "cancel"
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="s")
-    def test_prompt_interactive_skip(self, _mock_input):
+    def test_prompt_interactive_skip(self, _mock_input, _):
         """Interactive 's' input returns 'skip'."""
         self.config.on_duplicate = "ask"
         assert self.migrator._prompt_for_duplicate_website("Site A") == "skip"
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="u")
-    def test_prompt_interactive_update(self, _mock_input):
+    def test_prompt_interactive_update(self, _mock_input, _):
         """Interactive 'u' input returns 'update'."""
         self.config.on_duplicate = "ask"
         assert self.migrator._prompt_for_duplicate_website("Site A") == "update"
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", return_value="c")
-    def test_prompt_interactive_cancel(self, _mock_input):
+    def test_prompt_interactive_cancel(self, _mock_input, _):
         """Interactive 'c' input returns 'cancel'."""
         self.config.on_duplicate = "ask"
         assert self.migrator._prompt_for_duplicate_website("Site A") == "cancel"
 
+    @patch("utils.sys.stdin.isatty", return_value=True)
     @patch("builtins.input", side_effect=["invalid", "s"])
-    def test_prompt_interactive_retries_on_invalid(self, _mock_input):
+    def test_prompt_interactive_retries_on_invalid(self, _mock_input, _):
         """Interactive mode loops until a valid choice is entered."""
         self.config.on_duplicate = "ask"
         assert self.migrator._prompt_for_duplicate_website("Site A") == "skip"
