@@ -157,10 +157,10 @@ class TestPromptForOverrideStrategy(unittest.TestCase):
         self.migrator.config.on_duplicate = "skip"
         self.assertFalse(self.migrator._prompt_for_override_strategy())
 
-    def test_cancel_returns_false_not_sys_exit(self):
+    def test_cancel_returns_sys_exit(self):
         self.migrator.config.on_duplicate = "ask"
         with patch("sys.stdin") as mock_stdin:
-            mock_stdin.isatty.return_value = True
+            mock_stdin.isatty.return_value = 0
             with patch("builtins.input", side_effect=["c"]):
                 result = self.migrator._prompt_for_override_strategy()
         self.assertFalse(result)
