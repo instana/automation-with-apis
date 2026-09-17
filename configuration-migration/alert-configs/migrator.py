@@ -8,6 +8,9 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 
 
 class AlertConfigsMigrator:
@@ -23,6 +26,9 @@ class AlertConfigsMigrator:
 
     def migrate(self) -> Dict[str, int]:
         self.config.validate()
+
+        if self.config.dry_run:
+            return self._dry_run()
 
         self.channel_id_map = self._get_channel_id_map()
         self.event_id_map = self._get_event_id_map()
@@ -118,6 +124,128 @@ class AlertConfigsMigrator:
             "skipped_user": skipped_user,
             "skipped_invalid": skipped_invalid,
             "failed": failed_count,
+        }
+
+    def _dry_run(self) -> Dict[str, int]:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate()
+        """
+        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        # Build ID maps for accurate remapping preview (read-only)
+        self.channel_id_map = self._get_channel_id_map()
+        self.event_id_map = self._get_event_id_map()
+
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
+        source_configs = self._get_source_configs()
+        if source_configs is None:
+            print("  FAILED — could not fetch source alert configurations.")
+            print("[DRY RUN] Aborting.")
+            return _empty
+        print(f"  Source ... OK ({len(source_configs)} configurations found)")
+        print(f"  Destination ({self.config.target_url}) ...")
+        target_configs = self._get_target_configs()
+        if target_configs is None:
+            print("  FAILED — could not fetch destination alert configurations.")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_configs)}
+        print(f"  Destination ... OK ({len(target_configs)} configurations found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_configs)}
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
+
+        target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
+        target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}
+
+        would_create = 0
+        would_update = 0
+        skipped_identical = 0
+        skipped_invalid = 0
+        failed = 0
+
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for config in source_configs:
+            config_name = config.get('alertName')
+            if not config_name:
+                skip_lines.append("  ✗ Would skip    (unnamed configuration)")
+                skipped_invalid += 1
+                continue
+
+            # Check validity using the same formatting logic (no write)
+            try:
+                self._format_config_for_api(config)
+                valid = True
+            except ValueError as e:
+                valid = False
+                invalid_reason = str(e)
+
+            if not valid:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: {invalid_reason})")
+                skipped_invalid += 1
+                continue
+
+            source_id = config.get('id')
+            target_config = target_by_id.get(source_id) if source_id else None
+            if target_config is None and config_name in target_config_names:
+                target_config = next((c for c in target_configs if c.get('alertName') == config_name), None)
+
+            if target_config:
+                if self._configs_are_equal(config, target_config):
+                    skip_lines.append(f"  = Would skip    '{config_name}' (identical in target)")
+                    skipped_identical += 1
+                else:
+                    update_lines.append(f"  ~ Would update  '{config_name}' (exists in target, content differs)")
+                    would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{config_name}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+        if skip_lines:
+            print()
+            for line in skip_lines:
+                print(line)
+
+        skipped_total = skipped_identical + skipped_invalid
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source configurations      : {len(source_configs)}")
+        print(f"  Target configurations now  : {len(target_configs)}")
+        print(f"  Would be created           : {would_create}")
+        print(f"  Would be updated           : {would_update}")
+        print(f"  Would skip                 : {skipped_total}  ({skipped_identical} identical, {skipped_invalid} invalid)")
+        print(f"\n  Target configurations after migration would be: {len(target_configs) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        return {
+            "source": len(source_configs),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped_identical": skipped_identical,
+            "skipped_user": 0,
+            "skipped_invalid": skipped_invalid,
+            "failed": failed,
         }
 
     def _get_source_configs(self) -> Optional[List[Dict[str, Any]]]:

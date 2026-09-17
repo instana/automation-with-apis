@@ -10,6 +10,9 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureIntegrations"]
 
 
 class AlertChannelsMigrator:
@@ -37,7 +40,10 @@ class AlertChannelsMigrator:
         """
         # Validate configuration before proceeding
         self.config.validate()
-        
+
+        if self.config.dry_run:
+            return self._dry_run()
+
         print("Starting migration of alert channel configurations...")
         
         # Get source channels
@@ -154,7 +160,119 @@ class AlertChannelsMigrator:
             "skipped_user": skipped_user_count,
             "failed": failed_count,
         }
-    
+
+    def _dry_run(self) -> Dict[str, int]:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate()
+        """
+        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
+        source_channels = self._get_source_channels()
+        if source_channels is None:
+            print("  FAILED — could not fetch source channels.")
+            print("[DRY RUN] Aborting.")
+            return _empty
+        print(f"  Source ... OK ({len(source_channels)} channels found)")
+        print(f"  Destination ({self.config.target_url}) ...")
+        target_channels = self._get_target_channels()
+        if target_channels is None:
+            print("  FAILED — could not fetch destination channels.")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_channels)}
+        print(f"  Destination ... OK ({len(target_channels)} channels found)\n")
+
+        # --- Step 2: Permission check ---
+        print("[Step 2] Verifying destination API token permissions ...")
+        try:
+            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
+            print("  Required permissions check ... OK\n")
+        except PermissionError as exc:
+            print(f"  FAILED — {exc}")
+            print("[DRY RUN] Aborting.")
+            return {**_empty, "source": len(source_channels)}
+
+        # --- Step 3: Compare configurations ---
+        print("[Step 3] Comparing configurations ...")
+
+        target_id_map: Dict[str, Dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
+        target_name_map: Dict[str, Dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}
+
+        would_create = 0
+        would_update = 0
+        skipped_identical = 0
+        skipped_unsafe = 0
+        failed = 0
+
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for channel in source_channels:
+            channel_name = channel.get('name')
+            source_id = channel.get('id')
+
+            if not channel_name:
+                skip_lines.append("  ✗ Would skip    (unnamed channel)")
+                skipped_unsafe += 1
+                continue
+
+            if self._is_unsafe_to_migrate(channel):
+                skip_lines.append(f"  ✗ Would skip    '{channel_name}' (unsafe: contains credentials or system-specific fields)")
+                skipped_unsafe += 1
+                continue
+
+            target_channel = target_id_map.get(source_id) or target_name_map.get(channel_name)
+
+            if target_channel is not None:
+                if self._channels_are_identical(channel, target_channel):
+                    skip_lines.append(f"  = Would skip    '{channel_name}' (identical in target)")
+                    skipped_identical += 1
+                elif self._needs_instana_url_fix(target_channel):
+                    skip_lines.append(f"  = Would skip    '{channel_name}' (MS Teams instanaUrl mismatch — must be fixed on target manually)")
+                    skipped_identical += 1
+                else:
+                    update_lines.append(f"  ~ Would update  '{channel_name}' (exists in target, content differs)")
+                    would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{channel_name}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+        if skip_lines:
+            print()
+            for line in skip_lines:
+                print(line)
+
+        skipped_total = skipped_identical + skipped_unsafe
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source channels      : {len(source_channels)}")
+        print(f"  Target channels now  : {len(target_channels)}")
+        print(f"  Would be created     : {would_create}")
+        print(f"  Would be updated     : {would_update}")
+        print(f"  Would skip           : {skipped_total}  ({skipped_identical} identical, {skipped_unsafe} unsafe)")
+        print(f"\n  Target channels after migration would be: {len(target_channels) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        return {
+            "source": len(source_channels),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped_identical": skipped_identical,
+            "skipped_unsafe": skipped_unsafe,
+            "skipped_user": 0,
+            "failed": failed,
+        }
+
     def _needs_instana_url_fix(self, target_channel: Dict[str, Any]) -> bool:
         """Return True when the target channel has a stale or incorrect instanaUrl.
 
