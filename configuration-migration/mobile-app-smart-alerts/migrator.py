@@ -231,25 +231,30 @@ class MobileAppSmartAlertsMigrator:
             return False
 
     # @staticmethod
-    # def _coerce_tag_filter_values(obj: Any) -> Any:
-    #     """Recursively coerce numeric tag filter values to strings.
+    def _coerce_tag_filter_values(obj: Any) -> Any:
+        """Recursively coerce numeric 'value' fields inside TAG_FILTER nodes to strings.
 
-    #     The SDK's TagFilterAllOfValue oneOf validator fails when a value is an
-    #     int because int satisfies both StrictInt and Union[StrictFloat, StrictInt],
-    #     producing a "Multiple matches found" error. The Instana API treats tag
-    #     filter values as strings, so coercing them here is safe.
-    #     """
-    #     if isinstance(obj, list):
-    #         return [MobileAppSmartAlertsMigrator._coerce_tag_filter_values(item) for item in obj]
-    #     if isinstance(obj, dict):
-    #         result = {}
-    #         for k, v in obj.items():
-    #             if k == 'value' and isinstance(v, (int, float)) and not isinstance(v, bool):
-    #                 result[k] = str(v)
-    #             else:
-    #                 result[k] = MobileAppSmartAlertsMigrator._coerce_tag_filter_values(v)
-    #         return result
-    #     return obj
+        The SDK's TagFilterAllOfValue oneOf validator fails when a value is an
+        int because int satisfies both StrictInt and Union[StrictFloat, StrictInt],
+        producing a "Multiple matches found" error. The Instana API treats tag
+        filter values as strings, so coercing them here is safe.
+
+        Coercion is intentionally scoped to dicts whose "type" is "TAG_FILTER"
+        so that numeric values elsewhere (e.g. StaticThresholdRule.value) are
+        left untouched.
+        """
+        if isinstance(obj, list):
+            return [MobileAppSmartAlertsMigrator._coerce_tag_filter_values(item) for item in obj]
+        if isinstance(obj, dict):
+            coerce = obj.get('type') == 'TAG_FILTER'
+            result = {}
+            for k, v in obj.items():
+                if coerce and k == 'value' and isinstance(v, (int, float)) and not isinstance(v, bool):
+                    result[k] = str(v)
+                else:
+                    result[k] = MobileAppSmartAlertsMigrator._coerce_tag_filter_values(v)
+            return result
+        return obj
 
     def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
         """Prepare a source config dict for submission via the SDK.
@@ -259,9 +264,9 @@ class MobileAppSmartAlertsMigrator:
         """
         formatted = copy.deepcopy(config)
 
-        # # Coerce numeric tag filter values to strings to avoid the SDK's
-        # # TagFilterAllOfValue oneOf ambiguity between int and float schemas.
-        # formatted = self._coerce_tag_filter_values(formatted)
+        # Coerce numeric tag filter values to strings to avoid the SDK's
+        # TagFilterAllOfValue oneOf ambiguity between int and float schemas.
+        formatted = self._coerce_tag_filter_values(formatted)
 
         # Remove read-only fields that must not be sent in API requests.
         read_only_fields = [
