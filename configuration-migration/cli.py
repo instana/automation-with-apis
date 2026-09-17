@@ -83,6 +83,39 @@ def main():
         maintenance_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a maintenance configuration already exists in the target (default: ask)')
         maintenance_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
 
+        # Application smart alerts migrator
+        app_smart_alerts_parser = subparsers.add_parser('application-smart-alerts', help='Migrate application smart alert configurations')
+        app_smart_alerts_parser.add_argument('--config-file', help='Path to configuration file')
+        app_smart_alerts_parser.add_argument('--source-token', help='API token for source backend')
+        app_smart_alerts_parser.add_argument('--source-url', help='URL for source backend')
+        app_smart_alerts_parser.add_argument('--target-token', help='API token for target backend')
+        app_smart_alerts_parser.add_argument('--target-url', help='URL for target backend')
+        app_smart_alerts_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        app_smart_alerts_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for application smart alerts (api or file)')
+        app_smart_alerts_parser.add_argument('--events-file-path', help='Path to the source alert configs JSON file (when using file source)')
+
+        # Website smart alerts migrator
+        website_smart_alerts_parser = subparsers.add_parser('website-smart-alerts', help='Migrate website smart alert configurations')
+        website_smart_alerts_parser.add_argument('--config-file', help='Path to configuration file')
+        website_smart_alerts_parser.add_argument('--source-token', help='API token for source backend')
+        website_smart_alerts_parser.add_argument('--source-url', help='URL for source backend')
+        website_smart_alerts_parser.add_argument('--target-token', help='API token for target backend')
+        website_smart_alerts_parser.add_argument('--target-url', help='URL for target backend')
+        website_smart_alerts_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        website_smart_alerts_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for website smart alerts (api or file)')
+        website_smart_alerts_parser.add_argument('--events-file-path', help='Path to the source alert configs JSON file (when using file source)')
+
+        # mobile app smart alerts migrator
+        mobile_app_smart_alerts_parser = subparsers.add_parser('mobile-app-smart-alerts', help='Migrate mobile app smart alert configurations')
+        mobile_app_smart_alerts_parser.add_argument('--config-file', help='Path to configuration file')
+        mobile_app_smart_alerts_parser.add_argument('--source-token', help='API token for source backend')
+        mobile_app_smart_alerts_parser.add_argument('--source-url', help='URL for source backend')
+        mobile_app_smart_alerts_parser.add_argument('--target-token', help='API token for target backend')
+        mobile_app_smart_alerts_parser.add_argument('--target-url', help='URL for target backend')
+        mobile_app_smart_alerts_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        mobile_app_smart_alerts_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for mobile app smart alerts (api or file)')
+        mobile_app_smart_alerts_parser.add_argument('--events-file-path', help='Path to the source alert configs JSON file (when using file source)')
+
         # Website configs migrator
         website_configs_parser = subparsers.add_parser('website-configs', help='Migrate website monitoring configurations')
         website_configs_parser.add_argument('--config-file', help='Path to configuration file')
@@ -94,6 +127,18 @@ def main():
         website_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for website configs (api or file)')
         website_configs_parser.add_argument('--events-file-path', help='Path to the website configs JSON file (when using file source)')
         website_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate website is found (default: ask)')
+
+         # Mobile app configs migrator
+        mobile_app_configs_parser = subparsers.add_parser('mobile-app-configs', help='Migrate mobile app monitoring configurations')
+        mobile_app_configs_parser.add_argument('--config-file', help='Path to configuration file')
+        mobile_app_configs_parser.add_argument('--source-token', help='API token for source backend')
+        mobile_app_configs_parser.add_argument('--source-url', help='URL for source backend')
+        mobile_app_configs_parser.add_argument('--target-token', help='API token for target backend')
+        mobile_app_configs_parser.add_argument('--target-url', help='URL for target backend')
+        mobile_app_configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        mobile_app_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for mobile app configs (api or file)')
+        mobile_app_configs_parser.add_argument('--events-file-path', help='Path to the mobile app configs JSON file (when using file source)')
+        mobile_app_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate mobile app is found (default: ask)')
 
         # Parse arguments
         args = parser.parse_args()
@@ -184,6 +229,45 @@ def main():
                 # Exit with error code if no configurations were migrated
                 sys.exit(1)
 
+        elif args.command == 'application-smart-alerts':
+            # Import and run the application smart alerts migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'application-smart-alerts'))
+            from migrator import ApplicationSmartAlertsMigrator
+            migrator = ApplicationSmartAlertsMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one configuration was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
+
+        elif args.command == 'website-smart-alerts':
+            # Import and run the website smart alerts migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'website-smart-alerts'))
+            from migrator import WebsiteSmartAlertsMigrator
+            migrator = WebsiteSmartAlertsMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one configuration was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
+        
+        elif args.command == 'mobile-app-smart-alerts':
+            # Import and run the website smart alerts migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'mobile-app-smart-alerts'))
+            from migrator import MobileAppSmartAlertsMigrator
+            migrator = MobileAppSmartAlertsMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one configuration was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
+
         elif args.command == 'website-configs':
             # Import and run the website configs migrator
             sys.path.append(os.path.join(os.path.dirname(__file__), 'website-configs'))
@@ -196,6 +280,20 @@ def main():
                 sys.exit(0)
             else:
                 # Exit with error code if no websites were migrated
+                sys.exit(1)
+
+        elif args.command == 'mobile-app-configs':
+            # Import and run the mobile app configs migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'mobile-app-configs'))
+            from migrator import MobileAppConfigMigrator
+            migrator = MobileAppConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one mobile app was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                # Exit with error code if no mobile apps were migrated
                 sys.exit(1)
 
     except ValueError as e:
