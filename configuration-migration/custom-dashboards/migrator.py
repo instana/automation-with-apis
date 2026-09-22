@@ -10,6 +10,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from permissions import check_destination_permissions
+from utils import dry_run_connectivity_check, print_dry_run_preview
 
 _REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
 
@@ -235,44 +236,24 @@ class CustomDashboardsMigrator:
             Dictionary with would-be counts using the same keys as migrate()
         """
         _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
-        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        # --- Step 1: Connectivity ---
-        print(f"[Step 1] Checking connectivity ...")
-        print(f"  Source ({self.config.source_url}) ...")
-        source_dashboards = self._get_source_dashboards()
+        source_dashboards, target_dashboards = dry_run_connectivity_check(
+            self.config,
+            fetch_source=self._get_source_dashboards,
+            fetch_target=self._get_target_dashboards,
+            entity_name="dashboards",
+            required_permissions=_REQUIRED_PERMISSIONS,
+        )
         if source_dashboards is None:
-            print("  FAILED — could not fetch source dashboards.")
-            print("[DRY RUN] Aborting.")
             return _empty
-        print(f"  Source ... OK ({len(source_dashboards)} dashboards found)")
-        print(f"  Destination ({self.config.target_url}) ...")
-        target_dashboards = self._get_target_dashboards()
         if target_dashboards is None:
-            print("  FAILED — could not fetch destination dashboards.")
-            print("[DRY RUN] Aborting.")
             return {**_empty, "source": len(source_dashboards)}
-        print(f"  Destination ... OK ({len(target_dashboards)} dashboards found)\n")
-
-        # --- Step 2: Permission check ---
-        print("[Step 2] Verifying destination API token permissions ...")
-        try:
-            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
-            print("  Required permissions check ... OK\n")
-        except PermissionError as exc:
-            print(f"  FAILED — {exc}")
-            print("[DRY RUN] Aborting.")
-            return {**_empty, "source": len(source_dashboards)}
-
-        # --- Step 3: Compare configurations ---
-        print("[Step 3] Comparing configurations ...")
 
         target_titles = {d.get('title') for d in target_dashboards if d.get('title')}
 
         would_create = 0
         would_update = 0
         skipped_invalid = 0
-
         create_lines = []
         update_lines = []
         skip_lines = []
@@ -309,26 +290,17 @@ class CustomDashboardsMigrator:
                 create_lines.append(f"  ✓ Would create  '{dashboard_title}'")
                 would_create += 1
 
-        print("--- Preview ---")
-        for line in create_lines:
-            print(line)
-        for line in update_lines:
-            print(line)
-        if skip_lines:
-            print()
-            for line in skip_lines:
-                print(line)
-
         skipped_total = skipped_invalid
-        print(f"\n--- Dry-run summary ---")
-        print(f"  Source dashboards      : {len(source_dashboards)}")
-        print(f"  Target dashboards now  : {len(target_dashboards)}")
-        print(f"  Would be created       : {would_create}")
-        print(f"  Would be updated       : {would_update}")
-        print(f"  Would skip             : {skipped_total}  ({skipped_invalid} invalid)")
-        print(f"\n  Target dashboards after migration would be: {len(target_dashboards) + would_create}")
-        print("\n[DRY RUN] No changes were made.")
-
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_dashboards),
+            target_count=len(target_dashboards),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_invalid} invalid",
+            entity_name="dashboards",
+        )
         return {
             "source": len(source_dashboards),
             "migrated": would_create,

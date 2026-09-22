@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import prompt_duplicate
+from utils import dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
 from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
@@ -134,41 +134,24 @@ class AlertConfigsMigrator:
             Dictionary with would-be counts using the same keys as migrate()
         """
         _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
-        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        # Build ID maps for accurate remapping preview (read-only)
-        self.channel_id_map = self._get_channel_id_map()
-        self.event_id_map = self._get_event_id_map()
+        def _fetch_source():
+            # Build ID maps for accurate remapping preview (read-only) alongside source fetch
+            self.channel_id_map = self._get_channel_id_map()
+            self.event_id_map = self._get_event_id_map()
+            return self._get_source_configs()
 
-        # --- Step 1: Connectivity ---
-        print(f"[Step 1] Checking connectivity ...")
-        print(f"  Source ({self.config.source_url}) ...")
-        source_configs = self._get_source_configs()
+        source_configs, target_configs = dry_run_connectivity_check(
+            self.config,
+            fetch_source=_fetch_source,
+            fetch_target=self._get_target_configs,
+            entity_name="alert configurations",
+            required_permissions=_REQUIRED_PERMISSIONS,
+        )
         if source_configs is None:
-            print("  FAILED — could not fetch source alert configurations.")
-            print("[DRY RUN] Aborting.")
             return _empty
-        print(f"  Source ... OK ({len(source_configs)} configurations found)")
-        print(f"  Destination ({self.config.target_url}) ...")
-        target_configs = self._get_target_configs()
         if target_configs is None:
-            print("  FAILED — could not fetch destination alert configurations.")
-            print("[DRY RUN] Aborting.")
             return {**_empty, "source": len(source_configs)}
-        print(f"  Destination ... OK ({len(target_configs)} configurations found)\n")
-
-        # --- Step 2: Permission check ---
-        print("[Step 2] Verifying destination API token permissions ...")
-        try:
-            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
-            print("  Required permissions check ... OK\n")
-        except PermissionError as exc:
-            print(f"  FAILED — {exc}")
-            print("[DRY RUN] Aborting.")
-            return {**_empty, "source": len(source_configs)}
-
-        # --- Step 3: Compare configurations ---
-        print("[Step 3] Comparing configurations ...")
 
         target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
         target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}
@@ -178,7 +161,6 @@ class AlertConfigsMigrator:
         skipped_identical = 0
         skipped_invalid = 0
         failed = 0
-
         create_lines = []
         update_lines = []
         skip_lines = []
@@ -219,26 +201,17 @@ class AlertConfigsMigrator:
                 create_lines.append(f"  ✓ Would create  '{config_name}'")
                 would_create += 1
 
-        print("--- Preview ---")
-        for line in create_lines:
-            print(line)
-        for line in update_lines:
-            print(line)
-        if skip_lines:
-            print()
-            for line in skip_lines:
-                print(line)
-
         skipped_total = skipped_identical + skipped_invalid
-        print(f"\n--- Dry-run summary ---")
-        print(f"  Source configurations      : {len(source_configs)}")
-        print(f"  Target configurations now  : {len(target_configs)}")
-        print(f"  Would be created           : {would_create}")
-        print(f"  Would be updated           : {would_update}")
-        print(f"  Would skip                 : {skipped_total}  ({skipped_identical} identical, {skipped_invalid} invalid)")
-        print(f"\n  Target configurations after migration would be: {len(target_configs) + would_create}")
-        print("\n[DRY RUN] No changes were made.")
-
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_configs),
+            target_count=len(target_configs),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_identical} identical, {skipped_invalid} invalid",
+            entity_name="alert configurations",
+        )
         return {
             "source": len(source_configs),
             "migrated": would_create,

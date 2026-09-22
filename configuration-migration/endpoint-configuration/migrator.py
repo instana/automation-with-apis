@@ -17,7 +17,10 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
-from utils import MigrationResult, build_api, empty_result, make_result, partial_result, print_api_error, prompt_duplicate
+from utils import MigrationResult, build_api, dry_run_connectivity_check, empty_result, make_result, partial_result, print_api_error, print_dry_run_preview, prompt_duplicate
+from permissions import check_destination_permissions
+
+_REQUIRED_PERMISSIONS = ["canConfigureServiceMapping"]
 
 from typing import Dict, List, Optional
 
@@ -126,33 +129,23 @@ class EndpointConfigMigrator:
         Returns:
             Dictionary with would-be counts using the same keys as migrate().
         """
-        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
-
-        # --- Step 1: Connectivity ---
-        print(f"[Step 1] Checking connectivity ...")
-        print(f"  Source ({self.config.source_url}) ...")
         source_api = build_api(
             self.config.source_url, self.config.source_token, self.config.verify_ssl
         )
         target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
-        source_configs = self._get_configs(source_api, "source")
+        source_configs, target_configs = dry_run_connectivity_check(
+            self.config,
+            fetch_source=lambda: self._get_configs(source_api, "source"),
+            fetch_target=lambda: self._get_configs(target_api, "target"),
+            entity_name="endpoint configs",
+            required_permissions=_REQUIRED_PERMISSIONS,
+        )
         if source_configs is None:
-            print("  FAILED — could not fetch source endpoint configs.")
-            print("[DRY RUN] Aborting.")
             return empty_result()
-        print(f"  Source ... OK ({len(source_configs)} configs found)")
-        print(f"  Destination ({self.config.target_url}) ...")
-        target_configs = self._get_configs(target_api, "target")
         if target_configs is None:
-            print("  FAILED — could not fetch destination endpoint configs.")
-            print("[DRY RUN] Aborting.")
             return partial_result(len(source_configs))
-        print(f"  Destination ... OK ({len(target_configs)} configs found)\n")
-
-        # --- Step 2: Compare configurations ---
-        print("[Step 2] Comparing configurations ...")
 
         target_by_service_id: Dict[str, EndpointConfig] = {
             cfg.service_id: cfg for cfg in target_configs
@@ -161,12 +154,16 @@ class EndpointConfigMigrator:
         would_create = 0
         would_update = 0
         skipped_invalid = 0
-
-        create_lines = []
-        update_lines = []
+        create_lines: list = []
+        update_lines: list = []
+        skip_lines: list = []
 
         for cfg in source_configs:
             service_id = cfg.service_id
+            if not service_id:
+                skip_lines.append("  ✗ Would skip    (endpoint config with missing service ID)")
+                skipped_invalid += 1
+                continue
             if service_id in target_by_service_id:
                 update_lines.append(
                     f"  ~ Would update  endpoint config for service '{service_id}' (exists in target)"
@@ -178,22 +175,17 @@ class EndpointConfigMigrator:
                 )
                 would_create += 1
 
-        print("--- Preview ---")
-        for line in create_lines:
-            print(line)
-        for line in update_lines:
-            print(line)
-
         skipped_total = skipped_invalid
-        print(f"\n--- Dry-run summary ---")
-        print(f"  Source configs      : {len(source_configs)}")
-        print(f"  Target configs now  : {len(target_configs)}")
-        print(f"  Would be created    : {would_create}")
-        print(f"  Would be updated    : {would_update}")
-        print(f"  Would skip          : {skipped_total}")
-        print(f"\n  Target configs after migration would be: {len(target_configs) + would_create}")
-        print("\n[DRY RUN] No changes were made.")
-
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_configs),
+            target_count=len(target_configs),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_invalid} invalid",
+            entity_name="endpoint configs",
+        )
         return make_result(len(source_configs), would_create, would_update, skipped_total)
 
     # ------------------------------------------------------------------

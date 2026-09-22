@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import prompt_duplicate
+from utils import dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
 from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureEumApplications"]
@@ -252,44 +252,24 @@ class WebsiteConfigMigrator:
             Dictionary with would-be counts using the same keys as migrate()
         """
         _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
-        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        # --- Step 1: Connectivity ---
-        print(f"[Step 1] Checking connectivity ...")
-        print(f"  Source ({self.config.source_url}) ...")
-        source_websites = self._get_source_website_config()
+        source_websites, target_websites = dry_run_connectivity_check(
+            self.config,
+            fetch_source=self._get_source_website_config,
+            fetch_target=self._get_target_website_config,
+            entity_name="website configs",
+            required_permissions=_REQUIRED_PERMISSIONS,
+        )
         if source_websites is None:
-            print("  FAILED — could not fetch source website configurations.")
-            print("[DRY RUN] Aborting.")
             return _empty
-        print(f"  Source ... OK ({len(source_websites)} website configs found)")
-        print(f"  Destination ({self.config.target_url}) ...")
-        target_websites = self._get_target_website_config()
         if target_websites is None:
-            print("  FAILED — could not fetch destination website configurations.")
-            print("[DRY RUN] Aborting.")
             return {**_empty, "source": len(source_websites)}
-        print(f"  Destination ... OK ({len(target_websites)} website configs found)\n")
-
-        # --- Step 2: Permission check ---
-        print("[Step 2] Verifying destination API token permissions ...")
-        try:
-            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
-            print("  Required permissions check ... OK\n")
-        except PermissionError as exc:
-            print(f"  FAILED — {exc}")
-            print("[DRY RUN] Aborting.")
-            return {**_empty, "source": len(source_websites)}
-
-        # --- Step 3: Compare configurations ---
-        print("[Step 3] Comparing configurations ...")
 
         website_mapping = self._build_website_mapping(source_websites, target_websites)
 
         would_create = 0
         would_update = 0
         skipped_invalid = 0
-
         create_lines = []
         update_lines = []
         skip_lines = []
@@ -310,26 +290,17 @@ class WebsiteConfigMigrator:
                 create_lines.append(f"  ✓ Would create  '{source_name}'")
                 would_create += 1
 
-        print("--- Preview ---")
-        for line in create_lines:
-            print(line)
-        for line in update_lines:
-            print(line)
-        if skip_lines:
-            print()
-            for line in skip_lines:
-                print(line)
-
         skipped_total = skipped_invalid
-        print(f"\n--- Dry-run summary ---")
-        print(f"  Source website configs      : {len(source_websites)}")
-        print(f"  Target website configs now  : {len(target_websites)}")
-        print(f"  Would be created            : {would_create}")
-        print(f"  Would be updated            : {would_update}")
-        print(f"  Would skip                  : {skipped_total}  ({skipped_invalid} invalid)")
-        print(f"\n  Target website configs after migration would be: {len(target_websites) + would_create}")
-        print("\n[DRY RUN] No changes were made.")
-
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_websites),
+            target_count=len(target_websites),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_invalid} invalid",
+            entity_name="website configs",
+        )
         return {
             "source": len(source_websites),
             "migrated": would_create,

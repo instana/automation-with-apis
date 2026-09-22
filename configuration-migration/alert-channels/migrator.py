@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import prompt_duplicate
+from utils import dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
 from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureIntegrations"]
@@ -169,37 +169,18 @@ class AlertChannelsMigrator:
             Dictionary with would-be counts using the same keys as migrate()
         """
         _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
-        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
-        # --- Step 1: Connectivity ---
-        print(f"[Step 1] Checking connectivity ...")
-        print(f"  Source ({self.config.source_url}) ...")
-        source_channels = self._get_source_channels()
+        source_channels, target_channels = dry_run_connectivity_check(
+            self.config,
+            fetch_source=self._get_source_channels,
+            fetch_target=self._get_target_channels,
+            entity_name="channels",
+            required_permissions=_REQUIRED_PERMISSIONS,
+        )
         if source_channels is None:
-            print("  FAILED — could not fetch source channels.")
-            print("[DRY RUN] Aborting.")
             return _empty
-        print(f"  Source ... OK ({len(source_channels)} channels found)")
-        print(f"  Destination ({self.config.target_url}) ...")
-        target_channels = self._get_target_channels()
         if target_channels is None:
-            print("  FAILED — could not fetch destination channels.")
-            print("[DRY RUN] Aborting.")
             return {**_empty, "source": len(source_channels)}
-        print(f"  Destination ... OK ({len(target_channels)} channels found)\n")
-
-        # --- Step 2: Permission check ---
-        print("[Step 2] Verifying destination API token permissions ...")
-        try:
-            check_destination_permissions(self.config, _REQUIRED_PERMISSIONS)
-            print("  Required permissions check ... OK\n")
-        except PermissionError as exc:
-            print(f"  FAILED — {exc}")
-            print("[DRY RUN] Aborting.")
-            return {**_empty, "source": len(source_channels)}
-
-        # --- Step 3: Compare configurations ---
-        print("[Step 3] Comparing configurations ...")
 
         target_id_map: Dict[str, Dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
         target_name_map: Dict[str, Dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}
@@ -209,7 +190,6 @@ class AlertChannelsMigrator:
         skipped_identical = 0
         skipped_unsafe = 0
         failed = 0
-
         create_lines = []
         update_lines = []
         skip_lines = []
@@ -244,26 +224,17 @@ class AlertChannelsMigrator:
                 create_lines.append(f"  ✓ Would create  '{channel_name}'")
                 would_create += 1
 
-        print("--- Preview ---")
-        for line in create_lines:
-            print(line)
-        for line in update_lines:
-            print(line)
-        if skip_lines:
-            print()
-            for line in skip_lines:
-                print(line)
-
         skipped_total = skipped_identical + skipped_unsafe
-        print(f"\n--- Dry-run summary ---")
-        print(f"  Source channels      : {len(source_channels)}")
-        print(f"  Target channels now  : {len(target_channels)}")
-        print(f"  Would be created     : {would_create}")
-        print(f"  Would be updated     : {would_update}")
-        print(f"  Would skip           : {skipped_total}  ({skipped_identical} identical, {skipped_unsafe} unsafe)")
-        print(f"\n  Target channels after migration would be: {len(target_channels) + would_create}")
-        print("\n[DRY RUN] No changes were made.")
-
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_channels),
+            target_count=len(target_channels),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_identical} identical, {skipped_unsafe} unsafe",
+            entity_name="channels",
+        )
         return {
             "source": len(source_channels),
             "migrated": would_create,
