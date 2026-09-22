@@ -1,7 +1,7 @@
 """Shared utilities for configuration migration modules."""
 
 import json
-from typing import TypedDict
+from typing import List, Optional, Tuple, TypedDict
 
 import sys
 
@@ -92,6 +92,123 @@ def build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
     configuration.verify_ssl = verify_ssl
     api_client = instana_client.ApiClient(configuration)
     return ApplicationSettingsApi(api_client)
+
+
+# ---------------------------------------------------------------------------
+# Dry-run shared helpers
+# ---------------------------------------------------------------------------
+
+def dry_run_connectivity_check(
+    config,
+    fetch_source,
+    fetch_target,
+    entity_name: str,
+    required_permissions: List[str],
+) -> Tuple[Optional[list], Optional[list]]:
+    """Run the standard Steps 1 & 2 used by every _dry_run() method.
+
+    Prints the connectivity and permission-check output that is identical
+    across all migrators, and returns the fetched configs so the caller can
+    proceed to Step 3 (compare).
+
+    Args:
+        config: The Config instance (provides source_url, target_url, etc.).
+        fetch_source: Zero-argument callable that returns the source list or None.
+        fetch_target: Zero-argument callable that returns the target list or None.
+        entity_name: Plural human-readable label, e.g. ``"application configs"``.
+        required_permissions: List of ``canXYZ`` permission keys to check on the
+            destination token.
+
+    Returns:
+        ``(source_items, target_items)`` on full success.
+        ``(None, None)`` if the source fetch failed.
+        ``(source_items, None)`` if the target fetch or permission check failed.
+    """
+    from permissions import check_destination_permissions  # local import to avoid circular deps
+
+    print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+    # --- Step 1: Connectivity ---
+    print("[Step 1] Checking connectivity ...")
+    print(f"  Source ({config.source_url}) ...")
+    source_items = fetch_source()
+    if source_items is None:
+        print(f"  FAILED — could not fetch source {entity_name}.")
+        print("[DRY RUN] Aborting.")
+        return None, None
+    print(f"  Source ... OK ({len(source_items)} {entity_name} found)")
+    print(f"  Destination ({config.target_url}) ...")
+    target_items = fetch_target()
+    if target_items is None:
+        print(f"  FAILED — could not fetch destination {entity_name}.")
+        print("[DRY RUN] Aborting.")
+        return source_items, None
+    print(f"  Destination ... OK ({len(target_items)} {entity_name} found)\n")
+
+    # --- Step 2: Permission check ---
+    print("[Step 2] Verifying destination API token permissions ...")
+    try:
+        check_destination_permissions(config, required_permissions)
+        print("  Required permissions check ... OK\n")
+    except PermissionError as exc:
+        print(f"  FAILED — {exc}")
+        print("[DRY RUN] Aborting.")
+        return source_items, None
+
+    return source_items, target_items
+
+
+def print_dry_run_preview(
+    create_lines: List[str],
+    update_lines: List[str],
+    skip_lines: List[str],
+    source_count: int,
+    target_count: int,
+    would_create: int,
+    would_update: int,
+    skipped_total: int,
+    skipped_detail: str,
+    entity_name: str,
+) -> None:
+    """Print the standard Step 3 preview table and dry-run summary.
+
+    Prints the ``--- Preview ---`` block (create/update/skip lines) and the
+    ``--- Dry-run summary ---`` table that is identical in structure across
+    every migrator.
+
+    Args:
+        create_lines: Lines prefixed with ``✓ Would create``.
+        update_lines: Lines prefixed with ``~ Would update``.
+        skip_lines: Lines prefixed with ``✗ Would skip`` or ``= Would skip``.
+        source_count: Total items fetched from the source.
+        target_count: Total items currently in the target.
+        would_create: Count of items that would be created.
+        would_update: Count of items that would be updated.
+        skipped_total: Total items that would be skipped.
+        skipped_detail: Human-readable breakdown, e.g. ``"3 invalid"`` or
+            ``"2 identical, 1 unsafe"``.  Shown in parentheses on the skip line.
+        entity_name: Plural label used in the summary, e.g. ``"configs"``.
+    """
+    print("[Step 3] Comparing configurations ...")
+    print("--- Preview ---")
+    for line in create_lines:
+        print(line)
+    for line in update_lines:
+        print(line)
+    if skip_lines:
+        print()
+        for line in skip_lines:
+            print(line)
+
+    print(f"\n--- Dry-run summary ---")
+    label_w = max(len(f"Source {entity_name}"), len(f"Target {entity_name} now")) + 2
+    print(f"  {'Source ' + entity_name:<{label_w}}: {source_count}")
+    print(f"  {'Target ' + entity_name + ' now':<{label_w}}: {target_count}")
+    print(f"  {'Would be created':<{label_w}}: {would_create}")
+    print(f"  {'Would be updated':<{label_w}}: {would_update}")
+    print(f"  {'Would skip':<{label_w}}: {skipped_total}  ({skipped_detail})")
+    print(f"\n  Target {entity_name} after migration would be: {target_count + would_create}")
+    print("\n[DRY RUN] No changes were made.")
 
 
 def print_api_error(prefix: str, e: ApiException) -> None:
