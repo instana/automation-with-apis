@@ -65,6 +65,7 @@ def main():
         applications_parser.add_argument('--target-url', help='URL for target backend')
         applications_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         applications_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate application config is found (default: ask)')
+        applications_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Service configurations migrator
         services_parser = subparsers.add_parser('services', help='Migrate service configurations')
@@ -75,6 +76,7 @@ def main():
         services_parser.add_argument('--target-url', help='URL for target backend')
         services_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         services_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate service config is found (default: ask)')
+        services_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Endpoint configurations migrator
         endpoints_parser = subparsers.add_parser('endpoints', help='Migrate endpoint configurations')
@@ -85,6 +87,7 @@ def main():
         endpoints_parser.add_argument('--target-url', help='URL for target backend')
         endpoints_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         endpoints_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate endpoint config is found (default: ask)')
+        endpoints_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Custom dashboards migrator
         custom_dashboards_parser = subparsers.add_parser('custom-dashboards', help='Migrate custom dashboards')

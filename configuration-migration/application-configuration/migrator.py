@@ -57,6 +57,9 @@ class ApplicationConfigMigrator:
         """
         self.config.validate()
 
+        if self.config.dry_run:
+            return self._dry_run()
+
         print("Starting migration of application configurations...")
 
         source_api = build_api(
@@ -118,6 +121,76 @@ class ApplicationConfigMigrator:
             f"migrated {migrated_count}, updated {updated_count}, skipped {skipped_count}."
         )
         return make_result(source_count, migrated_count, updated_count, skipped_count)
+
+    def _dry_run(self) -> MigrationResult:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate().
+        """
+        print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
+
+        # --- Step 1: Connectivity ---
+        print(f"[Step 1] Checking connectivity ...")
+        print(f"  Source ({self.config.source_url}) ...")
+        source_api = build_api(
+            self.config.source_url, self.config.source_token, self.config.verify_ssl
+        )
+        target_api = build_api(
+            self.config.target_url, self.config.target_token, self.config.verify_ssl
+        )
+        source_configs = self._get_configs(source_api, "source")
+        if source_configs is None:
+            print("  FAILED — could not fetch source application configs.")
+            print("[DRY RUN] Aborting.")
+            return empty_result()
+        print(f"  Source ... OK ({len(source_configs)} configs found)")
+        print(f"  Destination ({self.config.target_url}) ...")
+        target_configs = self._get_configs(target_api, "target")
+        if target_configs is None:
+            print("  FAILED — could not fetch destination application configs.")
+            print("[DRY RUN] Aborting.")
+            return partial_result(len(source_configs))
+        print(f"  Destination ... OK ({len(target_configs)} configs found)\n")
+
+        # --- Step 2: Compare configurations ---
+        print("[Step 2] Comparing configurations ...")
+
+        target_labels = {cfg.label for cfg in target_configs}
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+
+        create_lines = []
+        update_lines = []
+
+        for cfg in source_configs:
+            label = cfg.label
+            if label in target_labels:
+                update_lines.append(f"  ~ Would update  '{label}' (exists in target)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{label}'")
+                would_create += 1
+
+        print("--- Preview ---")
+        for line in create_lines:
+            print(line)
+        for line in update_lines:
+            print(line)
+
+        skipped_total = skipped_invalid
+        print(f"\n--- Dry-run summary ---")
+        print(f"  Source configs      : {len(source_configs)}")
+        print(f"  Target configs now  : {len(target_configs)}")
+        print(f"  Would be created    : {would_create}")
+        print(f"  Would be updated    : {would_update}")
+        print(f"  Would skip          : {skipped_total}")
+        print(f"\n  Target configs after migration would be: {len(target_configs) + would_create}")
+        print("\n[DRY RUN] No changes were made.")
+
+        return make_result(len(source_configs), would_create, would_update, skipped_total)
 
     def _get_configs(
         self, api: ApplicationSettingsApi, label: str
