@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from utils import prompt_duplicate
 
 class WebsiteConfigMigrator:
     """Handles migration of website monitoring configurations between backends."""
@@ -108,23 +109,7 @@ class WebsiteConfigMigrator:
         if self.config.on_duplicate in ('skip', 'update', 'cancel'):
             return self.config.on_duplicate
 
-        while True:
-            print(f"\nWebsite '{website_name}' already exists in the target system.")
-            print("Choose an action:")
-            print("  [s] Skip")
-            print("  [u] Update existing website")
-            print("  [c] Cancel migration")
-
-            choice = input("Enter your choice [s/u/c]: ").lower()
-
-            if choice in ['s', 'skip']:
-                return 'skip'
-            elif choice in ['u', 'update']:
-                return 'update'
-            elif choice in ['c', 'cancel']:
-                return 'cancel'
-            else:
-                print("Invalid choice. Please try again.")
+        return prompt_duplicate("Website", website_name)
 
     def _update_website_config(self, website_name: str, target_id: str) -> bool:
         """Rename / update a website in the target backend.

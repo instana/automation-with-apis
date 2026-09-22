@@ -10,6 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from utils import prompt_duplicate
 
 
 class AlertChannelsMigrator:
@@ -414,23 +415,7 @@ class AlertChannelsMigrator:
         Returns:
             User choice: 'skip', 'update', or 'cancel'
         """
-        while True:
-            print(f"\nAlert channel '{channel_name}' already exists in the target system.")
-            print("Choose an action:")
-            print("  [s] Skip")
-            print("  [u] Update existing channel")
-            print("  [c] Cancel migration")
-            
-            choice = input("Enter your choice [s/u/c]: ").lower()
-            
-            if choice in ['s', 'skip']:
-                return 'skip'
-            elif choice in ['u', 'update']:
-                return 'update'
-            elif choice in ['c', 'cancel']:
-                return 'cancel'
-            else:
-                print("Invalid choice. Please try again.")
+        return prompt_duplicate("Alert channel", channel_name)
     
     def _create_channel(self, channel: Dict[str, Any], channel_name: str) -> bool:
         """Create an alert channel in the target backend.

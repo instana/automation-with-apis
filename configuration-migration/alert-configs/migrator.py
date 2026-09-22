@@ -8,6 +8,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from utils import prompt_duplicate
 
 
 class AlertConfigsMigrator:
@@ -156,22 +157,7 @@ class AlertConfigsMigrator:
             return None
 
     def _prompt_for_duplicate_config(self, config_name: str) -> str:
-        while True:
-            print(f"Alert configuration '{config_name}' already exists in the target system.")
-            print("Choose an action:")
-            print("  [s] Skip")
-            print("  [u] Update existing alert configuration")
-            print("  [c] Cancel migration")
-            choice = input("Enter your choice [s/u/c]: ").lower().strip()
-            
-            if choice in ['s', 'skip']:
-                return 'skip'
-            elif choice in ['u', 'update']:
-                return 'update'
-            elif choice in ['c', 'cancel']:
-                return 'cancel'
-            else:
-                print("Invalid choice. Please enter 's', 'u', or 'c'.")
+        return prompt_duplicate("Alert configuration", config_name)
 
     def _create_config(self, config: Dict[str, Any], config_name: str) -> Optional[bool]:
         """Returns True on success, None on validation skip, False on API error."""
