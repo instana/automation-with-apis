@@ -170,6 +170,18 @@ def main():
         mobile_app_configs_parser.add_argument('--events-file-path', help='Path to the mobile app configs JSON file (when using file source)')
         mobile_app_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate mobile app is found (default: ask)')
 
+         # Synthetic test configs migrator
+        synthetic_test_configs_parser = subparsers.add_parser('synthetic-test-configs', help='Migrate synthetic test configurations')
+        synthetic_test_configs_parser.add_argument('--config-file', help='Path to configuration file')
+        synthetic_test_configs_parser.add_argument('--source-token', help='API token for source backend')
+        synthetic_test_configs_parser.add_argument('--source-url', help='URL for source backend')
+        synthetic_test_configs_parser.add_argument('--target-token', help='API token for target backend')
+        synthetic_test_configs_parser.add_argument('--target-url', help='URL for target backend')
+        synthetic_test_configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        synthetic_test_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for synthetic test configs (api or file)')
+        synthetic_test_configs_parser.add_argument('--events-file-path', help='Path to the synthetic test configs JSON file (when using file source)')
+        synthetic_test_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate synthetic test is found (default: ask)')
+
         # Parse arguments
         args = parser.parse_args()
         
@@ -365,6 +377,20 @@ def main():
                 # Exit with error code if no mobile apps were migrated
                 sys.exit(1)
 
+        elif args.command == 'synthetic-test-configs':
+            # Import and run the synthetic test configs migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'synthetic-test-configs'))
+            from migrator import SyntheticTestConfigMigrator
+            migrator = SyntheticTestConfigMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one synthetic test was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                # Exit with error code if no synthetic tests were migrated
+                sys.exit(1)
+
     except ValueError as e:
         print(f"Configuration error: {e}")
         sys.exit(1)
@@ -375,5 +401,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Made with Bob
