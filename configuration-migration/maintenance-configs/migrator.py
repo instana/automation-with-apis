@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
+from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
 from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureMaintenanceWindows"]
@@ -81,6 +81,9 @@ class MaintenanceConfigsMigrator:
 
         if self.config.dry_run:
             return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return self._empty_result(0)
 
         print("Starting migration of maintenance configurations...")
 

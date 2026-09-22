@@ -10,7 +10,7 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
-from utils import MigrationResult, build_api, dry_run_connectivity_check, empty_result, make_result, partial_result, print_api_error, print_dry_run_preview, prompt_duplicate
+from utils import MigrationResult, build_api, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_api_error, print_dry_run_preview, prompt_duplicate
 from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureServiceMapping"]
@@ -45,6 +45,9 @@ class ServiceConfigMigrator:
 
         if self.config.dry_run:
             return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return empty_result()
 
         print("Starting migration of service configurations...")
 

@@ -93,10 +93,31 @@ def build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
     api_client = instana_client.ApiClient(configuration)
     return ApplicationSettingsApi(api_client)
 
+def check_permissions(config, required_permissions: List[str]) -> bool:
+    """Check that the destination API token has all required permissions.
 
-# ---------------------------------------------------------------------------
-# Dry-run shared helpers
-# ---------------------------------------------------------------------------
+    Intended to be called at the start of every ``migrate()`` run so that a
+    missing permission is surfaced immediately with a clear message rather than
+    discovered mid-migration when the first write call returns HTTP 403.
+
+    Args:
+        config: The Config instance (provides target_url, target_token, etc.).
+        required_permissions: List of ``canXYZ`` permission keys that must all
+            be ``True`` on the destination token.
+
+    Returns:
+        ``True`` if all permissions are present, ``False`` otherwise (after
+        printing a human-readable error message).
+    """
+    from permissions import check_destination_permissions  # local import to avoid circular deps
+
+    try:
+        check_destination_permissions(config, required_permissions)
+        return True
+    except PermissionError as exc:
+        print(f"✗ Permission check failed: {exc}")
+        print("Migration aborted. Ensure the target API token has the required permissions and try again.")
+        return False
 
 def dry_run_connectivity_check(
     config,

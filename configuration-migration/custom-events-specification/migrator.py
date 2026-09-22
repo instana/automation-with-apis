@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
+from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
 from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
@@ -43,6 +43,9 @@ class EventsMigrator:
 
         if self.config.dry_run:
             return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
 
         print("Starting migration of custom event configurations...")
 

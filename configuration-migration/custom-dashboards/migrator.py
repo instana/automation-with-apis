@@ -10,7 +10,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from permissions import check_destination_permissions
-from utils import dry_run_connectivity_check, print_dry_run_preview
+from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview
 
 _REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
 
@@ -66,6 +66,9 @@ class CustomDashboardsMigrator:
         """
         if self.config.dry_run:
             return self._dry_run_sync()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
 
         # Use async implementation if available for better performance
         if self._use_async:
