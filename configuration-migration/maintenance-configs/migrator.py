@@ -40,9 +40,7 @@ UNMIGRATABLE_STATES = {
     'UNSCHEDULED': 'already unscheduled',
 }
 
-# Config.events_file_path is shared by every migrator and defaults to this.
-# Writing maintenance configs there would clobber the custom events file.
-DEFAULT_EVENTS_FILE = "source_events.json"
+# Default file written/read by this migrator when no --events-file-path is given.
 MAINTENANCE_FILE = "source_maintenance_configs.json"
 
 
@@ -417,22 +415,6 @@ class MaintenanceConfigsMigrator:
             "target",
         )
 
-    def _resolve_source_file_path(self) -> str:
-        """Pick where to persist fetched configurations.
-
-        events_file_path is shared by all migrators and defaults to
-        source_events.json, so writing here would destroy the custom events
-        source file.
-
-        Returns:
-            Path to write the fetched configurations to
-        """
-        if self.config.events_file_path == DEFAULT_EVENTS_FILE:
-            print(f"Note: writing fetched maintenance configurations to {MAINTENANCE_FILE} "
-                  f"(use --events-file-path to override)")
-            return MAINTENANCE_FILE
-        return self.config.events_file_path
-
     def _write_source_file(self, configs: List[Dict[str, Any]]) -> None:
         """Persist fetched configurations so they can be reused as a file source.
 
@@ -446,7 +428,7 @@ class MaintenanceConfigsMigrator:
             "sourceUrl": self.config.source_url,
             "maintenanceConfigs": configs,
         }
-        file_path = self._resolve_source_file_path()
+        file_path = self.config.events_file_path
         try:
             with open(file_path, 'w') as f:
                 json.dump(envelope, f, indent=2)

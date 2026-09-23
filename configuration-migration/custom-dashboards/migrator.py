@@ -44,19 +44,18 @@ class CustomDashboardsMigrator:
             config: Configuration object with backend details
         """
         self.config = config
-        
+        self.req_custom_dashboards = "/api/custom-dashboard"
+        self.req_shareable_users = "/api/settings/users"
+
+        if not config.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
         # Use async implementation if available
         if ASYNC_AVAILABLE:
             self._async_migrator = CustomDashboardsMigratorAsync(config)
             self._use_async = True
         else:
             self._use_async = False
-            self.req_custom_dashboards = "/api/custom-dashboard"
-            self.req_shareable_users = "/api/settings/users"
-            
-            # Disable SSL warnings if verify_ssl is False
-            if not config.verify_ssl:
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     def migrate(self) -> Dict[str, int]:
         """Perform the migration of custom dashboards.
@@ -240,9 +239,14 @@ class CustomDashboardsMigrator:
         """
         _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
 
+        fetch_source = (
+            self._async_migrator.fetch_all_source_dashboards
+            if self._use_async
+            else self._get_source_dashboards
+        )
         source_dashboards, target_dashboards = dry_run_connectivity_check(
             self.config,
-            fetch_source=self._get_source_dashboards,
+            fetch_source=fetch_source,
             fetch_target=self._get_target_dashboards,
             entity_name="dashboards",
             required_permissions=_REQUIRED_PERMISSIONS,
@@ -371,7 +375,7 @@ class CustomDashboardsMigrator:
                 print("Invalid choice. Please try again.")
 
     def _get_source_dashboards(self) -> Optional[List[Dict[str, Any]]]:
-        """Get all custom dashboards from source backend or file.
+        """Get all custom dashboards from source backend.
         
         Returns:
             List of custom dashboards or None if failed

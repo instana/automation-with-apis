@@ -228,21 +228,33 @@ class AlertConfigsMigrator:
     def _get_source_configs(self) -> Optional[List[Dict[str, Any]]]:
         if self.config.events_source == "file":
             try:
-                with open(self.config.events_file_path, 'r') as f:
+                file_path = self.config.events_file_path
+                print(f"Reading alert configurations from {file_path} file...")
+                with open(file_path, 'r') as f:
                     configs = json.load(f)
+                print(f"Successfully loaded {len(configs)} alert configurations from file")
                 return configs
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 print(f"Error reading {self.config.events_file_path} file: {e}")
+                print("Make sure the file exists and contains valid JSON")
                 return None
         else:
             try:
+                print("Fetching alert configurations from API endpoint...")
                 response = requests.get(
                     f"{self.config.source_url}{self.req_alert_configs}",
                     headers=self.config.get_source_headers(),
                     verify=self.config.verify_ssl
                 )
                 response.raise_for_status()
-                return response.json()
+                configs = response.json()
+
+                # Write the response to the configured file path
+                with open(self.config.events_file_path, 'w') as f:
+                    json.dump(configs, f, indent=2)
+
+                print(f"Successfully fetched {len(configs)} alert configurations from API")
+                return configs
             except requests.exceptions.RequestException as e:
                 print(f"Error retrieving source alert configurations from API: {e}")
                 return None

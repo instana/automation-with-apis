@@ -44,6 +44,19 @@ class CustomDashboardsMigratorAsync:
             Dictionary with counts of source, migrated, updated, and skipped dashboards
         """
         return asyncio.run(self._migrate_async())
+
+    def fetch_all_source_dashboards(self) -> Optional[List[Dict[str, Any]]]:
+        """Fetch all source dashboards concurrently (sync wrapper for dry-run use).
+
+        Returns:
+            List of dashboard dicts or None on failure.
+        """
+        return asyncio.run(self._fetch_all_source_dashboards_async())
+
+    async def _fetch_all_source_dashboards_async(self) -> Optional[List[Dict[str, Any]]]:
+        """Async implementation: fetch every source dashboard with full detail."""
+        async with self.async_client as client:
+            return await self._get_source_dashboards_async(client, {}, True)
     
     async def _migrate_async(self) -> Dict[str, int]:
         """Perform the async migration of custom dashboards.
@@ -84,21 +97,21 @@ class CustomDashboardsMigratorAsync:
             
             if source_dashboards is None:
                 return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
-            
+
             # Get users from source and target for mapping
             source_users, target_users = await asyncio.gather(
                 self._get_shareable_users_async(client, self.config.source_url, self.config.get_source_headers()),
                 self._get_shareable_users_async(client, self.config.target_url, self.config.get_target_headers())
             )
-            
+
             if source_users is None:
                 print("Could not retrieve source users, aborting migration.")
                 return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
-            
+
             if target_users is None:
                 print("Could not retrieve target users, aborting migration.")
                 return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
-            
+
             # Map users
             user_map: Dict[str, str] = {}
             if not target_users:

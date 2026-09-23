@@ -8,6 +8,11 @@ matching config already exists in the target for the same service ID it will be 
 as a duplicate.  In most cross-backend migration scenarios the service IDs will differ;
 consider using the `--on-duplicate update` flag if you are migrating between environments
 that share the same service IDs (e.g. staging → production restores).
+
+When using file source the JSON file must contain a list of endpoint config objects,
+each with at minimum a ``serviceId`` field and optionally ``endpointCase``, ``rules``,
+``endpointNameByCollectedPathTemplateRuleEnabled``, and
+``endpointNameByFirstPathSegmentRuleEnabled``.
 """
 
 import sys
@@ -57,14 +62,11 @@ class EndpointConfigMigrator:
 
         print("Starting migration of endpoint configurations...")
 
-        source_api = build_api(
-            self.config.source_url, self.config.source_token, self.config.verify_ssl
-        )
         target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
 
-        source_configs = self._get_configs(source_api, "source")
+        source_configs = self._get_source_configs()
         if source_configs is None:
             return empty_result()
 
@@ -132,15 +134,12 @@ class EndpointConfigMigrator:
         Returns:
             Dictionary with would-be counts using the same keys as migrate().
         """
-        source_api = build_api(
-            self.config.source_url, self.config.source_token, self.config.verify_ssl
-        )
         target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
         source_configs, target_configs = dry_run_connectivity_check(
             self.config,
-            fetch_source=lambda: self._get_configs(source_api, "source"),
+            fetch_source=self._get_source_configs,
             fetch_target=lambda: self._get_configs(target_api, "target"),
             entity_name="endpoint configs",
             required_permissions=_REQUIRED_PERMISSIONS,
@@ -190,6 +189,46 @@ class EndpointConfigMigrator:
             entity_name="endpoint configs",
         )
         return make_result(len(source_configs), would_create, would_update, skipped_total)
+
+    def _get_source_configs(self) -> Optional[List[EndpointConfig]]:
+        """Get endpoint configs from a local JSON file or the source API.
+
+        Returns:
+            List of EndpointConfig objects or None on failure.
+        """
+        if self.config.events_source.lower() == "file":
+            file_path = self.config.events_file_path
+            try:
+                print(f"Reading endpoint configs from {file_path}...")
+                with open(file_path, 'r') as f:
+                    items = json.load(f)
+                if not isinstance(items, list):
+                    print(f"Error: expected a JSON array in {file_path}")
+                    return None
+                configs = []
+                for item in items:
+                    if item.get("endpointCase") is None:
+                        item["endpointCase"] = "ORIGINAL"
+                    if item.get("rules") == []:
+                        item["rules"] = None
+                    configs.append(EndpointConfig.from_dict(item))
+                print(f"Successfully loaded {len(configs)} endpoint configs from file")
+                return configs
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                print(f"Error reading {file_path}: {e}")
+                return None
+        else:
+            source_api = build_api(
+                self.config.source_url, self.config.source_token, self.config.verify_ssl
+            )
+            configs = self._get_configs(source_api, "source")
+            if configs is not None:
+                try:
+                    with open(self.config.events_file_path, 'w') as f:
+                        json.dump([c.to_dict() for c in configs], f, indent=2)
+                except OSError as e:
+                    print(f"Warning: could not write {self.config.events_file_path}: {e}")
+            return configs
 
     def _get_configs(
         self, api: ApplicationSettingsApi, label: str
