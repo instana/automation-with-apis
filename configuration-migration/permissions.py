@@ -48,14 +48,21 @@ def check_destination_permissions(config, required_fields: list[str]) -> None:
             f"Destination API tokens list returned non-JSON response: {exc}"
         ) from exc
 
-    # accessGrantingToken in the response equals the token value the user
-    # passes as --target-token, so we can match directly.
-    for i, t in enumerate(tokens):
-        agt = t.get("accessGrantingToken", "<missing>")
-        name = t.get("name", "<no name>")
+    # The list endpoint masks token values — accessGrantingToken is returned
+    # as e.g. "Q2b6TL0C******************" rather than the full token string.
+    # Match by comparing the visible prefix (characters before the first '*')
+    # against the start of the user-supplied token.
+    def _token_prefix(masked: str) -> str:
+        """Return the unmasked prefix from a masked token string."""
+        return masked.split("*")[0]
 
     matched = next(
-        (t for t in tokens if t.get("accessGrantingToken") == config.target_token),
+        (
+            t for t in tokens
+            if (agt := t.get("accessGrantingToken"))
+            and _token_prefix(agt)
+            and config.target_token.startswith(_token_prefix(agt))
+        ),
         None,
     )
     if matched is None:

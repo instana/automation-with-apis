@@ -17,7 +17,7 @@ class Config:
         self.target_url = ""
         self.verify_ssl = True
         self.events_source = "api"  # Default to API source
-        self.events_file_path = "source_events.json"  # Default file path
+        self.events_file_path = "source_events.json"  # Overridden per-subcommand in cli.py
         self.default_owner_id = None # Default owner ID for unmapped users
         self.on_duplicate = "ask" # Default action for duplicate items
         self.dry_run = False  # When True, preview changes without writing anything

@@ -29,7 +29,7 @@ def main():
         events_parser.add_argument('--target-url', help='URL for target backend')
         events_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         events_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for custom events (api or file)')
-        events_parser.add_argument('--events-file-path', help='Path to the source events JSON file (when using file source)')
+        events_parser.add_argument('--events-file-path', default='source_events.json', help='Path to the source events JSON file (default: source_events.json)')
         events_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
         
         # Alert channels migrator
@@ -41,7 +41,7 @@ def main():
         channels_parser.add_argument('--target-url', help='URL for target backend')
         channels_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         channels_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert channels (api or file)')
-        channels_parser.add_argument('--events-file-path', help='Path to the source channels JSON file (when using file source)')
+        channels_parser.add_argument('--events-file-path', default='source_channels.json', help='Path to the source channels JSON file (default: source_channels.json)')
         channels_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
         
         # Alert configurations migrator
@@ -53,7 +53,7 @@ def main():
         configs_parser.add_argument('--target-url', help='URL for target backend')
         configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert configurations (api or file)')
-        configs_parser.add_argument('--events-file-path', help='Path to the source configurations JSON file (when using file source)')
+        configs_parser.add_argument('--events-file-path', default='source_alert_configs.json', help='Path to the source alert configurations JSON file (default: source_alert_configs.json)')
         configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Application configurations migrator
@@ -64,6 +64,8 @@ def main():
         applications_parser.add_argument('--target-token', help='API token for target backend')
         applications_parser.add_argument('--target-url', help='URL for target backend')
         applications_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        applications_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for application configs (api or file)')
+        applications_parser.add_argument('--events-file-path', default='source_applications.json', help='Path to the source application configs JSON file (default: source_applications.json)')
         applications_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate application config is found (default: ask)')
         applications_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
@@ -75,6 +77,8 @@ def main():
         services_parser.add_argument('--target-token', help='API token for target backend')
         services_parser.add_argument('--target-url', help='URL for target backend')
         services_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        services_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for service configs (api or file)')
+        services_parser.add_argument('--events-file-path', default='source_services.json', help='Path to the source service configs JSON file (default: source_services.json)')
         services_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate service config is found (default: ask)')
         services_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
@@ -86,6 +90,8 @@ def main():
         endpoints_parser.add_argument('--target-token', help='API token for target backend')
         endpoints_parser.add_argument('--target-url', help='URL for target backend')
         endpoints_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        endpoints_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for endpoint configs (api or file)')
+        endpoints_parser.add_argument('--events-file-path', default='source_endpoints.json', help='Path to the source endpoint configs JSON file (default: source_endpoints.json)')
         endpoints_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate endpoint config is found (default: ask)')
         endpoints_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
@@ -116,7 +122,7 @@ def main():
         maintenance_parser.add_argument('--target-url', help='URL for target backend')
         maintenance_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         maintenance_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for maintenance configurations (api or file)')
-        maintenance_parser.add_argument('--events-file-path', help='Path to the maintenance configurations JSON file (when using file source)')
+        maintenance_parser.add_argument('--events-file-path', default='source_maintenance_configs.json', help='Path to the maintenance configurations JSON file (default: source_maintenance_configs.json)')
         maintenance_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a maintenance configuration already exists in the target (default: ask)')
         maintenance_parser.add_argument('--request-timeout', type=int, help='Timeout per request in seconds (default: 30)')
         maintenance_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
@@ -130,7 +136,7 @@ def main():
         website_configs_parser.add_argument('--target-url', help='URL for target backend')
         website_configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         website_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for website configs (api or file)')
-        website_configs_parser.add_argument('--events-file-path', help='Path to the website configs JSON file (when using file source)')
+        website_configs_parser.add_argument('--events-file-path', default='source_website_configs.json', help='Path to the website configs JSON file (default: source_website_configs.json)')
         website_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate website is found (default: ask)')
         website_configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
@@ -163,37 +169,26 @@ def main():
             from migrator import EventsMigrator
             migrator = EventsMigrator(config)
             result = migrator.migrate()
-            
-            # Exit with success if at least one event was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                # Exit with error code if no events were migrated
-                sys.exit(1)
-                
+            # Exit 1 only on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+
         elif args.command == 'channels':
             # Import and run the alert channels migrator
             sys.path.append(os.path.join(os.path.dirname(__file__), 'alert-channels'))
             from migrator import AlertChannelsMigrator
             migrator = AlertChannelsMigrator(config)
             result = migrator.migrate()
+            # Exit 1 only on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
-            # Exit with error only when one or more channels failed
-            sys.exit(1 if result["failed"] > 0 else 0)
-                
         elif args.command == 'configs':
             # Import and run the alert configurations migrator
             sys.path.append(os.path.join(os.path.dirname(__file__), 'alert-configs'))
             from migrator import AlertConfigsMigrator
             migrator = AlertConfigsMigrator(config)
             result = migrator.migrate()
-            
-            # Exit with success if at least one configuration was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                # Exit with error code if no configurations were migrated
-                sys.exit(1)
+            # Exit 1 only on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
         elif args.command == 'applications':
             # Import and run the application configurations migrator
@@ -201,12 +196,8 @@ def main():
             from migrator import ApplicationConfigMigrator
             migrator = ApplicationConfigMigrator(config)
             result = migrator.migrate()
-
-            # Exit with success if at least one application config was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                sys.exit(1)
+            # Exit 1 only when source fetch failed entirely
+            sys.exit(1 if result["source"] == 0 else 0)
 
         elif args.command == 'services':
             # Import and run the service configurations migrator
@@ -214,12 +205,8 @@ def main():
             from migrator import ServiceConfigMigrator
             migrator = ServiceConfigMigrator(config)
             result = migrator.migrate()
-
-            # Exit with success if at least one service config was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                sys.exit(1)
+            # Exit 1 only when source fetch failed entirely
+            sys.exit(1 if result["source"] == 0 else 0)
 
         elif args.command == 'endpoints':
             # Import and run the endpoint configurations migrator
@@ -227,12 +214,8 @@ def main():
             from migrator import EndpointConfigMigrator
             migrator = EndpointConfigMigrator(config)
             result = migrator.migrate()
-
-            # Exit with success if at least one endpoint config was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                sys.exit(1)
+            # Exit 1 only when source fetch failed entirely
+            sys.exit(1 if result["source"] == 0 else 0)
 
         elif args.command == 'custom-dashboards':
             # Import and run the custom dashboards migrator
@@ -240,13 +223,8 @@ def main():
             from migrator import CustomDashboardsMigrator
             migrator = CustomDashboardsMigrator(config)
             result = migrator.migrate()
-
-            # Exit with success if at least one dashboard was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                # Exit with error code if no dashboards were migrated
-                sys.exit(1)
+            # Exit 1 only when source fetch failed entirely
+            sys.exit(1 if result["source"] == 0 else 0)
 
         elif args.command == 'maintenance-configs':
             # Import and run the maintenance configurations migrator
@@ -254,13 +232,8 @@ def main():
             from migrator import MaintenanceConfigsMigrator
             migrator = MaintenanceConfigsMigrator(config)
             result = migrator.migrate()
-
-            # Exit with success if at least one configuration was migrated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                # Exit with error code if no configurations were migrated
-                sys.exit(1)
+            # Exit 1 only when source fetch failed entirely
+            sys.exit(1 if result["source"] == 0 else 0)
 
         elif args.command == 'website-configs':
             # Import and run the website configs migrator
@@ -268,13 +241,8 @@ def main():
             from migrator import WebsiteConfigMigrator
             migrator = WebsiteConfigMigrator(config)
             result = migrator.migrate()
-
-            # Exit with success if at least one website was migrated or updated
-            if result["migrated"] > 0 or result["updated"] > 0:
-                sys.exit(0)
-            else:
-                # Exit with error code if no websites were migrated
-                sys.exit(1)
+            # Exit 1 only when source fetch failed entirely
+            sys.exit(1 if result["source"] == 0 else 0)
 
     except ValueError as e:
         print(f"Configuration error: {e}")
