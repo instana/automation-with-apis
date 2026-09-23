@@ -10,7 +10,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from permissions import check_destination_permissions
 
 
-def _make_config(target_token="my-secret-token", target_url="https://target.example.com"):
+# Real token value passed via --target-token
+_FULL_TOKEN = "my-secret-tokenXYZ"
+# How the API returns it in the list response (prefix + asterisks)
+_MASKED_TOKEN = "my-secr******************"
+
+
+def _make_config(target_token=_FULL_TOKEN, target_url="https://target.example.com"):
     config = MagicMock()
     config.target_token = target_token
     config.target_url = target_url
@@ -23,10 +29,10 @@ def _make_config(target_token="my-secret-token", target_url="https://target.exam
 
 
 def _token_entry(**permissions):
-    """Build a minimal list-response token entry with the given permission overrides."""
+    """Build a minimal list-response token entry with masked token values, as the real API returns."""
     return {
-        "id": "my-secret-token",
-        "accessGrantingToken": "my-secret-token",
+        "id": _MASKED_TOKEN,
+        "accessGrantingToken": _MASKED_TOKEN,
         "internalId": "abc-123",
         "name": "my token",
         **permissions,
@@ -101,16 +107,16 @@ class TestCheckDestinationPermissions:
 
     @patch("permissions.requests.get")
     def test_multiple_tokens_correct_one_matched(self, mock_get):
-        """When multiple tokens exist in the list, the correct one is matched by accessGrantingToken."""
-        config = _make_config(target_token="my-secret-token")
+        """When multiple tokens exist in the list, the correct one is matched by masked prefix."""
+        config = _make_config(target_token=_FULL_TOKEN)
 
         list_response = MagicMock()
         list_response.status_code = 200
         list_response.json.return_value = [
-            # A different token that has the permission
+            # A different token that has the permission (different prefix)
             {
-                "id": "other-token",
-                "accessGrantingToken": "other-token",
+                "id": "zzzzz******************",
+                "accessGrantingToken": "zzzzz******************",
                 "internalId": "other-internal",
                 "canConfigureEventsAndAlerts": True,
             },
@@ -155,13 +161,14 @@ class TestCheckDestinationPermissions:
 
     @patch("permissions.requests.get")
     def test_token_not_found_in_list_raises(self, mock_get):
-        """Token not present in list response → PermissionError."""
-        config = _make_config(target_token="secret")
+        """No prefix match in list response → PermissionError."""
+        # Full token starts with "secret"; masked entry has a different prefix
+        config = _make_config(target_token="secretXYZ")
 
         list_response = MagicMock()
         list_response.status_code = 200
         list_response.json.return_value = [
-            {"accessGrantingToken": "some-other-token", "internalId": "xyz"}
+            {"accessGrantingToken": "zzzzz******************", "internalId": "xyz"}
         ]
         mock_get.return_value = list_response
 
