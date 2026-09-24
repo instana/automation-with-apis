@@ -1,13 +1,13 @@
 """Core functionality for migrating alert channels between backends."""
 
+import json
+import os
 import sys
+from typing import Any
+
 import requests
 import urllib3
-import json
-from typing import Dict, List, Any, Optional
 
-import sys
-import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
@@ -64,10 +64,10 @@ class AlertChannelsMigrator:
         # id_map gives an exact match when source and target share the same id
         # (e.g. a channel that was already migrated previously).
         # name_map is the fallback for channels that only share a name.
-        target_id_map: Dict[str, Dict[str, Any]] = {
+        target_id_map: dict[str, dict[str, Any]] = {
             c['id']: c for c in target_channels if c.get('id')
         }
-        target_name_map: Dict[str, Dict[str, Any]] = {
+        target_name_map: dict[str, dict[str, Any]] = {
             c['name']: c for c in target_channels if c.get('name')
         }
 
@@ -180,8 +180,8 @@ class AlertChannelsMigrator:
         if target_channels is None:
             return partial_result(len(source_channels))
 
-        target_id_map: Dict[str, Dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
-        target_name_map: Dict[str, Dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}
+        target_id_map: dict[str, dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
+        target_name_map: dict[str, dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}
 
         would_create = 0
         would_update = 0
@@ -243,7 +243,7 @@ class AlertChannelsMigrator:
             skipped_unsafe=skipped_unsafe,
         )
 
-    def _needs_instana_url_fix(self, target_channel: Dict[str, Any]) -> bool:
+    def _needs_instana_url_fix(self, target_channel: dict[str, Any]) -> bool:
         """Return True when the target channel has a stale or incorrect instanaUrl.
 
         This covers channels that were created before the instanaUrl fix was in place
@@ -260,7 +260,7 @@ class AlertChannelsMigrator:
         return target_instana_url is not None and target_instana_url != self.config.target_url
 
     def _channels_are_identical(
-        self, source: Dict[str, Any], target: Dict[str, Any]
+        self, source: dict[str, Any], target: dict[str, Any]
     ) -> bool:
         """Return True when source and target channels have identical content.
 
@@ -295,7 +295,7 @@ class AlertChannelsMigrator:
         target_cmp = {k: v for k, v in target.items() if k not in ignore}
         return source_cmp == target_cmp
 
-    def _is_unsafe_to_migrate(self, channel: Dict[str, Any]) -> bool:
+    def _is_unsafe_to_migrate(self, channel: dict[str, Any]) -> bool:
         """Return True when a channel cannot be safely migrated without manual intervention.
 
         Channels are considered unsafe when the target API validates credentials or
@@ -314,7 +314,7 @@ class AlertChannelsMigrator:
         """
         return channel.get('kind') == 'SERVICE_NOW_APPLICATION'
 
-    def _format_channel_for_api(self, channel: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_channel_for_api(self, channel: dict[str, Any]) -> dict[str, Any]:
         """Format channel data according to the specific channel type requirements.
         
         Args:
@@ -434,7 +434,7 @@ class AlertChannelsMigrator:
         
         return formatted
     
-    def _get_source_channels(self) -> Optional[List[Dict[str, Any]]]:
+    def _get_source_channels(self) -> list[dict[str, Any]] | None:
         """Get all alert channel configurations from source backend or file.
         
         Returns:
@@ -475,7 +475,7 @@ class AlertChannelsMigrator:
                 print(f"Error retrieving source channels from API: {e}")
                 return None
     
-    def _get_target_channels(self) -> Optional[List[Dict[str, Any]]]:
+    def _get_target_channels(self) -> list[dict[str, Any]] | None:
         """Get all alert channel configurations from target backend.
         
         Returns:
@@ -504,7 +504,7 @@ class AlertChannelsMigrator:
         """
         return prompt_duplicate("Alert channel", channel_name)
     
-    def _create_channel(self, channel: Dict[str, Any], channel_name: str) -> bool:
+    def _create_channel(self, channel: dict[str, Any], channel_name: str) -> bool:
         """Create an alert channel in the target backend.
         
         Args:
@@ -543,7 +543,7 @@ class AlertChannelsMigrator:
             print(f"Failed to migrate alert channel '{channel_name}': {e}{f' - {error_body}' if error_body else ''}")
             return False
             
-    def _update_channel(self, channel: Dict[str, Any], channel_name: str, target_channel: Dict[str, Any]) -> bool:
+    def _update_channel(self, channel: dict[str, Any], channel_name: str, target_channel: dict[str, Any]) -> bool:
         """Update an existing alert channel in the target backend.
         
         Args:

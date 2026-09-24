@@ -1,11 +1,13 @@
 import copy
 import json
+import os
+import sys
 import uuid
+from typing import Any
+
 import requests
 import urllib3
-from typing import Dict, List, Any, Optional
-import sys
-import os
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
@@ -58,7 +60,7 @@ class AlertConfigsMigrator:
 
         # Cache per-name duplicate decisions so the prompt only fires once when
         # multiple source configs share the same alertName.
-        name_decision_cache: Dict[str, str] = {}
+        name_decision_cache: dict[str, str] = {}
 
         for config in source_configs:
             config_name = config.get('alertName')
@@ -136,15 +138,9 @@ class AlertConfigsMigrator:
         Returns:
             MigrationResult with would-be counts using the same keys as migrate()
         """
-        def _fetch_source():
-            # Build ID maps for accurate remapping preview (read-only) alongside source fetch
-            self.channel_id_map = self._get_channel_id_map()
-            self.event_id_map = self._get_event_id_map()
-            return self._get_source_configs()
-
         source_configs, target_configs = dry_run_connectivity_check(
             self.config,
-            fetch_source=_fetch_source,
+            fetch_source=self._get_source_configs,
             fetch_target=self._get_target_configs,
             entity_name="alert configurations",
             required_permissions=_REQUIRED_PERMISSIONS,
@@ -153,6 +149,10 @@ class AlertConfigsMigrator:
             return empty_result()
         if target_configs is None:
             return partial_result(len(source_configs))
+
+        # Build ID maps for accurate remapping preview only after connectivity is confirmed
+        self.channel_id_map = self._get_channel_id_map()
+        self.event_id_map = self._get_event_id_map()
 
         target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
         target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}
@@ -174,14 +174,13 @@ class AlertConfigsMigrator:
                 continue
 
             # Check validity using the same formatting logic (no write)
+            invalid_reason = None
             try:
                 self._format_config_for_api(config)
-                valid = True
             except ValueError as e:
-                valid = False
                 invalid_reason = str(e)
 
-            if not valid:
+            if invalid_reason is not None:
                 skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: {invalid_reason})")
                 skipped_invalid += 1
                 continue
@@ -223,7 +222,7 @@ class AlertConfigsMigrator:
             skipped_invalid=skipped_invalid,
         )
 
-    def _get_source_configs(self) -> Optional[List[Dict[str, Any]]]:
+    def _get_source_configs(self) -> list[dict[str, Any]] | None:
         if self.config.events_source == "file":
             try:
                 file_path = self.config.events_file_path
@@ -246,18 +245,20 @@ class AlertConfigsMigrator:
                 )
                 response.raise_for_status()
                 configs = response.json()
-
-                # Write the response to the configured file path
-                with open(self.config.events_file_path, 'w') as f:
-                    json.dump(configs, f, indent=2)
-
+                # Cache to file so the user can re-run with --events-source file
+                # without hitting the source API again.
+                try:
+                    with open(self.config.events_file_path, 'w') as f:
+                        json.dump(configs, f, indent=2)
+                except OSError as e:
+                    print(f"Warning: could not write {self.config.events_file_path}: {e}")
                 print(f"Successfully fetched {len(configs)} alert configurations from API")
                 return configs
             except requests.exceptions.RequestException as e:
                 print(f"Error retrieving source alert configurations from API: {e}")
                 return None
 
-    def _get_target_configs(self) -> Optional[List[Dict[str, Any]]]:
+    def _get_target_configs(self) -> list[dict[str, Any]] | None:
         try:
             response = requests.get(
                 f"{self.config.target_url}{self.req_alert_configs}",
@@ -273,7 +274,7 @@ class AlertConfigsMigrator:
     def _prompt_for_duplicate_config(self, config_name: str) -> str:
         return prompt_duplicate("Alert configuration", config_name)
 
-    def _create_config(self, config: Dict[str, Any], config_name: str) -> Optional[bool]:
+    def _create_config(self, config: dict[str, Any], config_name: str) -> bool | None:
         """Returns True on success, None on validation skip, False on API error."""
         try:
             formatted_config = self._format_config_for_api(config)
@@ -297,7 +298,7 @@ class AlertConfigsMigrator:
                 print(f"API response: {e.response.text}")
             return False
 
-    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
+    def _update_config(self, config: dict[str, Any], target_id: str, config_name: str) -> bool | None:
         """Returns True on success, None on validation skip, False on API error."""
         try:
             formatted_config = self._format_config_for_api(config)
@@ -322,7 +323,7 @@ class AlertConfigsMigrator:
                 print(f"API response: {e.response.text}")
             return False
 
-    def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
+    def _format_config_for_api(self, config: dict[str, Any], validate: bool = True) -> dict[str, Any]:
         formatted = copy.deepcopy(config)
         
         # Remove read-only fields that shouldn't be sent in API requests
@@ -427,7 +428,7 @@ class AlertConfigsMigrator:
 
         return formatted
 
-    def _get_channel_id_map(self) -> Dict[str, str]:
+    def _get_channel_id_map(self) -> dict[str, str]:
         """Fetch alert channels from source and target to build a source-ID to target-ID map."""
         channel_id_map = {}
         try:
@@ -471,7 +472,7 @@ class AlertConfigsMigrator:
 
         return channel_id_map
 
-    def _get_event_id_map(self) -> Dict[str, str]:
+    def _get_event_id_map(self) -> dict[str, str]:
         """Fetch custom events from source and target to build a source-ID to target-ID map."""
         event_id_map = {}
         try:
@@ -515,7 +516,7 @@ class AlertConfigsMigrator:
 
         return event_id_map
 
-    def _configs_are_equal(self, source: Dict[str, Any], target: Dict[str, Any]) -> bool:
+    def _configs_are_equal(self, source: dict[str, Any], target: dict[str, Any]) -> bool:
         """Return True if source and target represent the same alert config content.
 
         Normalizes both configurations and compares their content-only fields,

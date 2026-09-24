@@ -1,14 +1,17 @@
 """Shared utilities for configuration migration modules."""
 
 import json
-from typing import List, Optional, Tuple, TypedDict
-
 import sys
+from typing import TypedDict
 
 import instana_client
 import urllib3
 from instana_client.api.application_settings_api import ApplicationSettingsApi
 from instana_client.exceptions import ApiException
+
+# Re-exported from permissions.py — permission logic lives there to keep this
+# module focused on data-structure utilities.
+from permissions import check_permissions, dry_run_connectivity_check  # noqa: E402
 
 
 class MigrationResult(TypedDict):
@@ -135,96 +138,10 @@ def build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
     api_client = instana_client.ApiClient(configuration)
     return ApplicationSettingsApi(api_client)
 
-def check_permissions(config, required_permissions: List[str]) -> bool:
-    """Check that the destination API token has all required permissions.
-
-    Intended to be called at the start of every ``migrate()`` run so that a
-    missing permission is surfaced immediately with a clear message rather than
-    discovered mid-migration when the first write call returns HTTP 403.
-
-    Args:
-        config: The Config instance (provides target_url, target_token, etc.).
-        required_permissions: List of ``canXYZ`` permission keys that must all
-            be ``True`` on the destination token.
-
-    Returns:
-        ``True`` if all permissions are present, ``False`` otherwise (after
-        printing a human-readable error message).
-    """
-    from permissions import check_destination_permissions  # local import to avoid circular deps
-
-    try:
-        check_destination_permissions(config, required_permissions)
-        return True
-    except PermissionError as exc:
-        print(f"✗ Permission check failed: {exc}")
-        print("Migration aborted. Ensure the target API token has the required permissions and try again.")
-        return False
-
-def dry_run_connectivity_check(
-    config,
-    fetch_source,
-    fetch_target,
-    entity_name: str,
-    required_permissions: List[str],
-) -> Tuple[Optional[list], Optional[list]]:
-    """Run the standard Steps 1 & 2 used by every _dry_run() method.
-
-    Prints the connectivity and permission-check output that is identical
-    across all migrators, and returns the fetched configs so the caller can
-    proceed to Step 3 (compare).
-
-    Args:
-        config: The Config instance (provides source_url, target_url, etc.).
-        fetch_source: Zero-argument callable that returns the source list or None.
-        fetch_target: Zero-argument callable that returns the target list or None.
-        entity_name: Plural human-readable label, e.g. ``"application configs"``.
-        required_permissions: List of ``canXYZ`` permission keys to check on the
-            destination token.
-
-    Returns:
-        ``(source_items, target_items)`` on full success.
-        ``(None, None)`` if the source fetch failed.
-        ``(source_items, None)`` if the target fetch or permission check failed.
-    """
-    from permissions import check_destination_permissions  # local import to avoid circular deps
-
-    print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
-
-    # --- Step 1: Connectivity ---
-    print("[Step 1] Checking connectivity ...")
-    print(f"  Source ({config.source_url}) ...")
-    source_items = fetch_source()
-    if source_items is None:
-        print(f"  FAILED — could not fetch source {entity_name}.")
-        print("[DRY RUN] Aborting.")
-        return None, None
-    print(f"  Source ... OK ({len(source_items)} {entity_name} found)")
-    print(f"  Destination ({config.target_url}) ...")
-    target_items = fetch_target()
-    if target_items is None:
-        print(f"  FAILED — could not fetch destination {entity_name}.")
-        print("[DRY RUN] Aborting.")
-        return source_items, None
-    print(f"  Destination ... OK ({len(target_items)} {entity_name} found)\n")
-
-    # --- Step 2: Permission check ---
-    print("[Step 2] Verifying destination API token permissions ...")
-    try:
-        check_destination_permissions(config, required_permissions)
-        print("  Required permissions check ... OK\n")
-    except PermissionError as exc:
-        print(f"  FAILED — {exc}")
-        print("[DRY RUN] Aborting.")
-        return source_items, None
-
-    return source_items, target_items
-
-
 def print_dry_run_preview(
-    create_lines: List[str],
-    update_lines: List[str],
-    skip_lines: List[str],
+    create_lines: list[str],
+    update_lines: list[str],
+    skip_lines: list[str],
     source_count: int,
     target_count: int,
     would_create: int,
@@ -263,7 +180,7 @@ def print_dry_run_preview(
         for line in skip_lines:
             print(line)
 
-    print(f"\n--- Dry-run summary ---")
+    print("\n--- Dry-run summary ---")
     label_w = max(len(f"Source {entity_name}"), len(f"Target {entity_name} now")) + 2
     print(f"  {'Source ' + entity_name:<{label_w}}: {source_count}")
     print(f"  {'Target ' + entity_name + ' now':<{label_w}}: {target_count}")

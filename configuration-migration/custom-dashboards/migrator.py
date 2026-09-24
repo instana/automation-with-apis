@@ -1,19 +1,24 @@
-
 """Core functionality for migrating custom dashboards between backends.
 
 This module now uses the async implementation for better performance.
 The synchronous interface is maintained for backward compatibility.
 """
 
-import sys
+import json
 import os
+import sys
+from typing import Any, Dict, List, Optional
+
+import requests
+import urllib3
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview
 
 _REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
 
-# Import the async implementation
+# Import the async implementation — optional, falls back to sync if unavailable.
 try:
     from migrator_async import CustomDashboardsMigratorAsync
     ASYNC_AVAILABLE = True
@@ -21,12 +26,6 @@ except ImportError as e:
     ASYNC_AVAILABLE = False
     print(f"Warning: Async dependencies not available. Install aiohttp and aiohttp-retry for better performance.")
     print(f"Import error details: {e}")
-
-# Keep the old synchronous implementation as fallback
-import requests
-import urllib3
-import json
-from typing import Dict, List, Any, Optional
 
 
 class CustomDashboardsMigrator:
@@ -62,6 +61,8 @@ class CustomDashboardsMigrator:
         Returns:
             MigrationResult with counts of source, migrated, updated, skipped, and failed dashboards
         """
+        # Dry-run always uses the sync preview path — the async migrator has no
+        # dry-run implementation, and previewing never requires async throughput.
         if self.config.dry_run:
             return self._dry_run_sync()
 

@@ -1,10 +1,9 @@
 """Command-line interface for Custom Events, Alert Channels, Alert Configurations, Custom Dashboards, and Website Configs Migrator."""
 
+import os
 import sys
 import argparse
 from config import Config
-import sys
-import os
 
 # Import will be done conditionally based on command
 
@@ -223,8 +222,8 @@ def main():
             from migrator import CustomDashboardsMigrator
             migrator = CustomDashboardsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only when source fetch failed entirely
-            sys.exit(1 if result["source"] == 0 else 0)
+            # Exit 1 on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
         elif args.command == 'maintenance-configs':
             # Import and run the maintenance configurations migrator
@@ -232,8 +231,8 @@ def main():
             from migrator import MaintenanceConfigsMigrator
             migrator = MaintenanceConfigsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only when source fetch failed entirely
-            sys.exit(1 if result["source"] == 0 else 0)
+            # Exit 1 on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
         elif args.command == 'website-configs':
             # Import and run the website configs migrator
@@ -241,8 +240,8 @@ def main():
             from migrator import WebsiteConfigMigrator
             migrator = WebsiteConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only when source fetch failed entirely
-            sys.exit(1 if result["source"] == 0 else 0)
+            # Exit 1 on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
     except ValueError as e:
         print(f"Configuration error: {e}")

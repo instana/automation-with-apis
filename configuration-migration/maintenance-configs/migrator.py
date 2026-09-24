@@ -1,12 +1,13 @@
 """Core functionality for migrating maintenance configurations between backends."""
 
-import sys
+import json
 import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 import requests
 import urllib3
-import json
-from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
@@ -38,9 +39,6 @@ UNMIGRATABLE_STATES = {
     'EXPIRED': 'already expired',
     'UNSCHEDULED': 'already unscheduled',
 }
-
-# Default file written/read by this migrator when no --events-file-path is given.
-MAINTENANCE_FILE = "source_maintenance_configs.json"
 
 
 class MaintenanceConfigsMigrator:
@@ -100,6 +98,7 @@ class MaintenanceConfigsMigrator:
         migrated_count = 0
         updated_count = 0
         skipped_invalid = 0
+        skipped_user = 0
         failed_count = 0
         unmigratable: List[tuple] = []
 
@@ -133,7 +132,7 @@ class MaintenanceConfigsMigrator:
 
                 if choice == 'skip':
                     print(f"Maintenance configuration '{config_name}' already exists in target, skipping")
-                    skipped_invalid += 1
+                    skipped_user += 1
                     continue
 
             payload = self._prepare_config(source_config)
@@ -150,9 +149,10 @@ class MaintenanceConfigsMigrator:
             else:
                 failed_count += 1
 
+        skipped_total = skipped_invalid + skipped_user
         print(f"Migration complete. Found {len(source_configs)} source maintenance configurations, "
               f"migrated {migrated_count}, updated {updated_count}, "
-              f"skipped {skipped_invalid} ({skipped_invalid} invalid), "
+              f"skipped {skipped_total} ({skipped_invalid} invalid, {skipped_user} user skipped), "
               f"failed {failed_count}.")
 
         self._report_unmigratable(unmigratable)
@@ -161,9 +161,10 @@ class MaintenanceConfigsMigrator:
             source=len(source_configs),
             migrated=migrated_count,
             updated=updated_count,
-            skipped=skipped_invalid,
+            skipped=skipped_total,
             failed=failed_count,
             skipped_invalid=skipped_invalid,
+            skipped_user=skipped_user,
         )
 
     def _dry_run(self) -> MigrationResult:
