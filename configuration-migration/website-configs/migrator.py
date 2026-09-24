@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
+from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureEumApplications"]
 
@@ -162,12 +162,12 @@ class WebsiteConfigMigrator:
         except requests.exceptions.RequestException as e:
             print(f"Error creating website '{website_name}' in target backend: {e}")
             return None
-            
-    def migrate(self) -> Dict[str, Any]:
+
+    def migrate(self) -> MigrationResult:
         """Perform the migration of the website configurations.
 
         Returns:
-            Dictionary with counts and website ID mapping
+            MigrationResult with counts of source, migrated, updated, skipped, and failed websites.
         """
         # Validate configuration
         self.config.validate()
@@ -176,7 +176,7 @@ class WebsiteConfigMigrator:
             return self._dry_run()
 
         if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+            return empty_result()
 
         print("Starting migration of website configurations...")
 
@@ -184,24 +184,25 @@ class WebsiteConfigMigrator:
         source_websites = self._get_source_website_config()
 
         if source_websites is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+            return empty_result()
 
         if not source_websites:
             print("No source website configurations found.")
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+            return empty_result()
 
         # Get target websites
         target_websites = self._get_target_website_config()
 
         if target_websites is None:
-            return {"source": len(source_websites), "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
-        
-        # Build initial mapping of existing websites
+            return partial_result(len(source_websites))
+
+        # Build initial mapping of existing websites (used internally for dedup)
         website_mapping = self._build_website_mapping(source_websites, target_websites)
 
         migrated_count = 0
-        skipped_count = 0
+        skipped_user = 0
         updated_count = 0
+        failed_count = 0
 
         # Process each source website
         for source_website in source_websites:
@@ -217,7 +218,7 @@ class WebsiteConfigMigrator:
                 choice = self._prompt_for_duplicate_website(str(source_name))
                 if choice == 'skip':
                     print(f"Website '{source_name}' already exists in target backend, skipping")
-                    skipped_count += 1
+                    skipped_user += 1
                     continue
                 elif choice == 'update':
                     target_id = website_mapping[source_id]
@@ -237,24 +238,24 @@ class WebsiteConfigMigrator:
 
         print(f"Migration complete. Found {len(source_websites)} source websites, "
               f"migrated {migrated_count}, updated {updated_count}, "
-              f"skipped {skipped_count} existing websites.")
+              f"skipped {skipped_user} ({skipped_user} user skipped), "
+              f"failed {failed_count}.")
 
-        return {
-            "source": len(source_websites),
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped": skipped_count,
-            "website_mapping": website_mapping,
-        }
+        return make_result(
+            source=len(source_websites),
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_user,
+            failed=failed_count,
+            skipped_user=skipped_user,
+        )
 
-    def _dry_run(self) -> Dict[str, Any]:
+    def _dry_run(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
 
         Returns:
-            Dictionary with would-be counts using the same keys as migrate()
+            MigrationResult with would-be counts using the same keys as migrate().
         """
-        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
-
         source_websites, target_websites = dry_run_connectivity_check(
             self.config,
             fetch_source=self._get_source_website_config,
@@ -263,9 +264,9 @@ class WebsiteConfigMigrator:
             required_permissions=_REQUIRED_PERMISSIONS,
         )
         if source_websites is None:
-            return _empty
+            return empty_result()
         if target_websites is None:
-            return {**_empty, "source": len(source_websites)}
+            return partial_result(len(source_websites))
 
         website_mapping = self._build_website_mapping(source_websites, target_websites)
 
@@ -303,10 +304,10 @@ class WebsiteConfigMigrator:
             skipped_detail=f"{skipped_invalid} invalid",
             entity_name="website configs",
         )
-        return {
-            "source": len(source_websites),
-            "migrated": would_create,
-            "updated": would_update,
-            "skipped": skipped_total,
-            "website_mapping": website_mapping,
-        }
+        return make_result(
+            source=len(source_websites),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            skipped_invalid=skipped_total,
+        )

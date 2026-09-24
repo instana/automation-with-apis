@@ -13,6 +13,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from async_client import AsyncHTTPClient
 from rate_limiter import RateLimiter
+import sys as _sys
+_sys.path.insert(0, __import__('os').path.join(__import__('os').path.dirname(__file__), '..'))
+from utils import MigrationResult, make_result, empty_result, partial_result
 
 
 class CustomDashboardsMigratorAsync:
@@ -37,7 +40,7 @@ class CustomDashboardsMigratorAsync:
             max_retries=config.retry_attempts
         )
     
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Synchronous wrapper for async migration (maintains backward compatibility).
         
         Returns:
@@ -58,11 +61,11 @@ class CustomDashboardsMigratorAsync:
         async with self.async_client as client:
             return await self._get_source_dashboards_async(client, {}, True)
     
-    async def _migrate_async(self) -> Dict[str, int]:
+    async def _migrate_async(self) -> MigrationResult:
         """Perform the async migration of custom dashboards.
-        
+
         Returns:
-            Dictionary with counts of source, migrated, updated, skipped, and failed dashboards
+            MigrationResult with counts of source, migrated, updated, skipped, and failed dashboards
         """
         # Validate configuration before proceeding
         self.config.validate()
@@ -96,7 +99,7 @@ class CustomDashboardsMigratorAsync:
                 source_dashboards = await self._get_source_dashboards_async(client, existing_ids_by_title, override_existing)
             
             if source_dashboards is None:
-                return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
+                return empty_result()
 
             # Get users from source and target for mapping
             source_users, target_users = await asyncio.gather(
@@ -106,11 +109,11 @@ class CustomDashboardsMigratorAsync:
 
             if source_users is None:
                 print("Could not retrieve source users, aborting migration.")
-                return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
+                return empty_result()
 
             if target_users is None:
                 print("Could not retrieve target users, aborting migration.")
-                return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0, "failed": 0}
+                return partial_result(len(source_dashboards))
 
             # Map users
             user_map: Dict[str, str] = {}
@@ -139,16 +142,18 @@ class CustomDashboardsMigratorAsync:
             failed_count = results.count('failed')
 
             print(f"\nMigration complete. Found {len(source_dashboards)} source dashboards, "
-                  f"migrated {migrated_count} custom dashboards, updated {updated_count} dashboards, "
-                  f"skipped {skipped_count} dashboards, failed {failed_count} dashboards.")
+                  f"migrated {migrated_count}, updated {updated_count}, "
+                  f"skipped {skipped_count} (0 identical, 0 unsafe query, 0 user skipped, {skipped_count} invalid), "
+                  f"failed {failed_count}.")
             
-            return {
-                "source": len(source_dashboards),
-                "migrated": migrated_count,
-                "updated": updated_count,
-                "skipped": skipped_count,
-                "failed": failed_count,
-            }
+            return make_result(
+                source=len(source_dashboards),
+                migrated=migrated_count,
+                updated=updated_count,
+                skipped=skipped_count,
+                skipped_invalid=skipped_count,
+                failed=failed_count,
+            )
     
     def _prompt_for_override_strategy(self) -> bool:
         """Ask user once about override strategy.

@@ -80,7 +80,8 @@ class EndpointConfigMigrator:
 
         migrated_count = 0
         updated_count = 0
-        skipped_count = 0
+        skipped_user = 0
+        failed_count = 0
         source_count = len(source_configs)
 
         for cfg in source_configs:
@@ -94,23 +95,23 @@ class EndpointConfigMigrator:
                     if self._update_config(target_api, cfg, target_by_service_id[service_id]):
                         updated_count += 1
                     else:
-                        skipped_count += 1
+                        failed_count += 1
                 elif self.config.on_duplicate == "skip":
                     print(
                         f"⊘ Endpoint config for service '{service_id}' already exists, skipping..."
                     )
-                    skipped_count += 1
+                    skipped_user += 1
                 else:
                     choice = prompt_duplicate("Endpoint config for service", service_id)
                     if choice == "skip":
-                        skipped_count += 1
+                        skipped_user += 1
                     elif choice == "update":
                         if self._update_config(
                             target_api, cfg, target_by_service_id[service_id]
                         ):
                             updated_count += 1
                         else:
-                            skipped_count += 1
+                            failed_count += 1
                     elif choice == "cancel":
                         print("Migration cancelled by user.")
                         break
@@ -119,13 +120,22 @@ class EndpointConfigMigrator:
             if self._create_config(target_api, cfg):
                 migrated_count += 1
             else:
-                skipped_count += 1
+                failed_count += 1
 
         print(
             f"Migration complete. Found {source_count} source endpoint configs, "
-            f"migrated {migrated_count}, updated {updated_count}, skipped {skipped_count}."
+            f"migrated {migrated_count}, updated {updated_count}, "
+            f"skipped {skipped_user} ({skipped_user} user skipped), "
+            f"failed {failed_count}."
         )
-        return make_result(source_count, migrated_count, updated_count, skipped_count)
+        return make_result(
+            source=source_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_user,
+            failed=failed_count,
+            skipped_user=skipped_user,
+        )
 
     def _dry_run(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
@@ -187,7 +197,13 @@ class EndpointConfigMigrator:
             skipped_detail=f"{skipped_invalid} invalid",
             entity_name="endpoint configs",
         )
-        return make_result(len(source_configs), would_create, would_update, skipped_total)
+        return make_result(
+            source=len(source_configs),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            skipped_invalid=skipped_total,
+        )
 
     def _get_source_configs(self) -> Optional[List[EndpointConfig]]:
         """Get endpoint configs from a local JSON file or the source API.

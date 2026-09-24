@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview
+from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview
 
 _REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
 
@@ -56,58 +56,58 @@ class CustomDashboardsMigrator:
         else:
             self._use_async = False
     
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of custom dashboards.
-        
+
         Returns:
-            Dictionary with counts of source, migrated, updated, and skipped dashboards
+            MigrationResult with counts of source, migrated, updated, skipped, and failed dashboards
         """
         if self.config.dry_run:
             return self._dry_run_sync()
 
         if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+            return empty_result()
 
         # Use async implementation if available for better performance
         if self._use_async:
             return self._async_migrator.migrate()
-        
+
         # Fallback to synchronous implementation
         return self._migrate_sync()
-    
-    def _migrate_sync(self) -> Dict[str, int]:
+
+    def _migrate_sync(self) -> MigrationResult:
         """Synchronous migration implementation (fallback).
-        
+
         Returns:
-            Dictionary with counts of source, migrated, updated, and skipped dashboards
+            MigrationResult with counts of source, migrated, updated, skipped, and failed dashboards
         """
         # Validate configuration before proceeding
         self.config.validate()
-        
+
         print("Starting migration of custom dashboards (synchronous mode)...")
         print("Note: Install aiohttp and aiohttp-retry for 10x faster performance!")
-        
+
         # Get source dashboards
         source_dashboards = self._get_source_dashboards()
         if source_dashboards is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
-        
+            return empty_result()
+
         # Get target dashboards to avoid duplicates
         target_dashboards = self._get_target_dashboards()
         if target_dashboards is None:
-            return {"source": len(source_dashboards), "migrated": 0, "updated": 0, "skipped": 0}
-            
+            return partial_result(len(source_dashboards))
+
         # Get users from source and target for mapping
         source_users = self._get_shareable_users(self.config.source_url, self.config.get_source_headers())
         target_users = self._get_shareable_users(self.config.target_url, self.config.get_target_headers())
 
         if source_users is None:
             print("Could not retrieve source users, aborting migration.")
-            return {"source": 0, "migrated": 0, "skipped": 0, "updated": 0}
-        
+            return empty_result()
+
         if target_users is None:
             print("Could not retrieve target users, aborting migration.")
-            return {"source": len(source_dashboards), "migrated": 0, "skipped": 0, "updated": 0}
+            return partial_result(len(source_dashboards))
 
         user_map: Dict[str, str] = {}
         if not target_users:
@@ -119,8 +119,10 @@ class CustomDashboardsMigrator:
         target_dashboard_titles = [d.get('title') for d in target_dashboards if d.get('title')]
         
         migrated_count = 0
-        skipped_count = 0
+        skipped_invalid = 0
+        skipped_user = 0
         updated_count = 0
+        failed_count = 0
         source_dashboards_count = len(source_dashboards)
         
         for dashboard in source_dashboards:
@@ -128,7 +130,7 @@ class CustomDashboardsMigrator:
 
             if not dashboard_title:
                 print("Skipping dashboard with no title")
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             # Remove the 'owner' field if it exists
@@ -153,7 +155,7 @@ class CustomDashboardsMigrator:
             # Ensure widgets are present
             if 'widgets' not in dashboard or not dashboard['widgets']:
                 print(f"Warning: Dashboard '{dashboard_title}' has no widgets. Skipping.")
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
             
             # Validate widget structure - each widget must have required fields
@@ -176,7 +178,7 @@ class CustomDashboardsMigrator:
                     break
             
             if widget_validation_failed:
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             if dashboard_title in target_dashboard_titles:
@@ -186,30 +188,30 @@ class CustomDashboardsMigrator:
                     if self._update_dashboard(dashboard, dashboard_title, target_dashboards):
                         updated_count += 1
                     else:
-                        skipped_count += 1
+                        failed_count += 1
                     continue
                 elif self.config.on_duplicate == "skip":
                     print(f"⊘ Dashboard '{dashboard_title}' already exists, skipping...")
-                    skipped_count += 1
+                    skipped_user += 1
                     continue
                 else:
                     # on_duplicate == "ask" - prompt user
                     choice = self._prompt_for_duplicate_dashboard(dashboard_title)
                     if choice == 'skip':
                         print(f"Skipping dashboard '{dashboard_title}' - already exists in target system")
-                        skipped_count += 1
+                        skipped_user += 1
                         continue
                     elif choice == 'update':
                         print(f"Updating dashboard '{dashboard_title}' - already exists in target system")
                         if self._update_dashboard(dashboard, dashboard_title, target_dashboards):
                             updated_count += 1
                         else:
-                            skipped_count += 1
+                            failed_count += 1
                         continue
                     elif choice == 'cancel':
                         print("Migration cancelled by user")
                         break
-            
+
             # IMPORTANT: Keep the 'id' field from source dashboard
             # The API requires this field to properly create the dashboard
             # Do NOT delete it!
@@ -217,27 +219,30 @@ class CustomDashboardsMigrator:
             if self._create_dashboard(dashboard):
                 migrated_count += 1
             else:
-                skipped_count += 1
-        
-        print(f"Migration complete. Found {source_dashboards_count} source dashboards, "
-              f"migrated {migrated_count} custom dashboards, updated {updated_count} dashboards, "
-              f"skipped {skipped_count} dashboards.")
-        
-        return {
-            "source": source_dashboards_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped": skipped_count
-        }
+                failed_count += 1
 
-    def _dry_run_sync(self) -> Dict[str, int]:
+        skipped_total = skipped_invalid + skipped_user
+        print(f"Migration complete. Found {source_dashboards_count} source dashboards, "
+              f"migrated {migrated_count}, updated {updated_count}, "
+              f"skipped {skipped_total} ({skipped_user} user skipped, {skipped_invalid} invalid), "
+              f"failed {failed_count}.")
+
+        return make_result(
+            source=source_dashboards_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_user=skipped_user,
+            skipped_invalid=skipped_invalid,
+        )
+
+    def _dry_run_sync(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
 
         Returns:
             Dictionary with would-be counts using the same keys as migrate()
         """
-        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
-
         fetch_source = (
             self._async_migrator.fetch_all_source_dashboards
             if self._use_async
@@ -251,9 +256,9 @@ class CustomDashboardsMigrator:
             required_permissions=_REQUIRED_PERMISSIONS,
         )
         if source_dashboards is None:
-            return _empty
+            return empty_result()
         if target_dashboards is None:
-            return {**_empty, "source": len(source_dashboards)}
+            return partial_result(len(source_dashboards))
 
         target_titles = {d.get('title') for d in target_dashboards if d.get('title')}
 
@@ -307,12 +312,13 @@ class CustomDashboardsMigrator:
             skipped_detail=f"{skipped_invalid} invalid",
             entity_name="dashboards",
         )
-        return {
-            "source": len(source_dashboards),
-            "migrated": would_create,
-            "updated": would_update,
-            "skipped": skipped_total,
-        }
+        return make_result(
+            source=len(source_dashboards),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            skipped_invalid=skipped_total,
+        )
 
     def _map_users(self, source_users: List[Dict[str, Any]], target_users: List[Dict[str, Any]]) -> Dict[str, str]:
         """Map users between source and target backends based on email.

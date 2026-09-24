@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
+from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 
@@ -24,14 +24,14 @@ class AlertConfigsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         self.config.validate()
 
         if self.config.dry_run:
             return self._dry_run()
 
         if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+            return empty_result()
 
         self.channel_id_map = self._get_channel_id_map()
         self.event_id_map = self._get_event_id_map()
@@ -40,11 +40,11 @@ class AlertConfigsMigrator:
 
         source_configs = self._get_source_configs()
         if source_configs is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+            return empty_result()
 
         target_configs = self._get_target_configs()
         if target_configs is None:
-            return {"source": len(source_configs), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+            return partial_result(len(source_configs))
 
         target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
         target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}
@@ -119,24 +119,23 @@ class AlertConfigsMigrator:
               f"{skipped_user} user skipped, {skipped_invalid} invalid), "
               f"failed {failed_count}.")
 
-        return {
-            "source": source_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped_identical": skipped_identical,
-            "skipped_user": skipped_user,
-            "skipped_invalid": skipped_invalid,
-            "failed": failed_count,
-        }
+        return make_result(
+            source=source_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_identical=skipped_identical,
+            skipped_user=skipped_user,
+            skipped_invalid=skipped_invalid,
+        )
 
-    def _dry_run(self) -> Dict[str, int]:
+    def _dry_run(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
 
         Returns:
-            Dictionary with would-be counts using the same keys as migrate()
+            MigrationResult with would-be counts using the same keys as migrate()
         """
-        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
-
         def _fetch_source():
             # Build ID maps for accurate remapping preview (read-only) alongside source fetch
             self.channel_id_map = self._get_channel_id_map()
@@ -151,9 +150,9 @@ class AlertConfigsMigrator:
             required_permissions=_REQUIRED_PERMISSIONS,
         )
         if source_configs is None:
-            return _empty
+            return empty_result()
         if target_configs is None:
-            return {**_empty, "source": len(source_configs)}
+            return partial_result(len(source_configs))
 
         target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
         target_config_names = {c.get('alertName') for c in target_configs if c.get('alertName')}
@@ -214,15 +213,15 @@ class AlertConfigsMigrator:
             skipped_detail=f"{skipped_identical} identical, {skipped_invalid} invalid",
             entity_name="alert configurations",
         )
-        return {
-            "source": len(source_configs),
-            "migrated": would_create,
-            "updated": would_update,
-            "skipped_identical": skipped_identical,
-            "skipped_user": 0,
-            "skipped_invalid": skipped_invalid,
-            "failed": failed,
-        }
+        return make_result(
+            source=len(source_configs),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            failed=failed,
+            skipped_identical=skipped_identical,
+            skipped_invalid=skipped_invalid,
+        )
 
     def _get_source_configs(self) -> Optional[List[Dict[str, Any]]]:
         if self.config.events_source == "file":

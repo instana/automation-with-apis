@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
+from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureIntegrations"]
 
@@ -31,12 +31,11 @@ class AlertChannelsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of alert channels.
-        
+
         Returns:
-            Dictionary with counts of source, migrated, updated, skipped_identical,
-            skipped_user, and failed channels
+            MigrationResult with counts of source, migrated, updated, skipped, and failed channels
         """
         # Validate configuration before proceeding
         self.config.validate()
@@ -45,19 +44,19 @@ class AlertChannelsMigrator:
             return self._dry_run()
 
         if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+            return empty_result()
 
         print("Starting migration of alert channel configurations...")
-        
+
         # Get source channels
         source_channels = self._get_source_channels()
         if source_channels is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
-        
+            return empty_result()
+
         # Get target channels to avoid duplicates
         target_channels = self._get_target_channels()
         if target_channels is None:
-            return {"source": len(source_channels), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+            return partial_result(len(source_channels))
         
         print(f"Found {len(target_channels)} existing channels in target")
 
@@ -147,31 +146,28 @@ class AlertChannelsMigrator:
         print(
             f"Migration complete. Found {source_channels_count} source channels, "
             f"migrated {migrated_count}, updated {updated_count}, "
-            f"skipped {skipped_total} "
-            f"({skipped_identical_count} identical, "
-            f"{skipped_unsafe_count} unsafe, "
-            f"{skipped_user_count} user skipped), "
+            f"skipped {skipped_total} ({skipped_identical_count} identical, "
+            f"{skipped_unsafe_count} unsafe, {skipped_user_count} user skipped), "
             f"failed {failed_count}."
         )
 
-        return {
-            "source": source_channels_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped_identical": skipped_identical_count,
-            "skipped_unsafe": skipped_unsafe_count,
-            "skipped_user": skipped_user_count,
-            "failed": failed_count,
-        }
+        return make_result(
+            source=source_channels_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_identical=skipped_identical_count,
+            skipped_unsafe=skipped_unsafe_count,
+            skipped_user=skipped_user_count,
+        )
 
-    def _dry_run(self) -> Dict[str, int]:
+    def _dry_run(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
 
         Returns:
-            Dictionary with would-be counts using the same keys as migrate()
+            MigrationResult with would-be counts using the same keys as migrate()
         """
-        _empty = {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
-
         source_channels, target_channels = dry_run_connectivity_check(
             self.config,
             fetch_source=self._get_source_channels,
@@ -180,9 +176,9 @@ class AlertChannelsMigrator:
             required_permissions=_REQUIRED_PERMISSIONS,
         )
         if source_channels is None:
-            return _empty
+            return empty_result()
         if target_channels is None:
-            return {**_empty, "source": len(source_channels)}
+            return partial_result(len(source_channels))
 
         target_id_map: Dict[str, Dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
         target_name_map: Dict[str, Dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}
@@ -237,15 +233,15 @@ class AlertChannelsMigrator:
             skipped_detail=f"{skipped_identical} identical, {skipped_unsafe} unsafe",
             entity_name="channels",
         )
-        return {
-            "source": len(source_channels),
-            "migrated": would_create,
-            "updated": would_update,
-            "skipped_identical": skipped_identical,
-            "skipped_unsafe": skipped_unsafe,
-            "skipped_user": 0,
-            "failed": failed,
-        }
+        return make_result(
+            source=len(source_channels),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            failed=failed,
+            skipped_identical=skipped_identical,
+            skipped_unsafe=skipped_unsafe,
+        )
 
     def _needs_instana_url_fix(self, target_channel: Dict[str, Any]) -> bool:
         """Return True when the target channel has a stale or incorrect instanaUrl.

@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
+from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureMaintenanceWindows"]
 
@@ -66,11 +66,11 @@ class MaintenanceConfigsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def migrate(self) -> Dict[str, Any]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of maintenance configurations.
 
         Returns:
-            Dictionary with counts of source, migrated, updated, skipped and
+            MigrationResult with counts of source, migrated, updated, skipped and
             failed configurations
         """
         # Validate configuration before proceeding
@@ -80,18 +80,18 @@ class MaintenanceConfigsMigrator:
             return self._dry_run()
 
         if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
-            return self._empty_result(0)
+            return empty_result()
 
         print("Starting migration of maintenance configurations...")
 
         source_configs = self._get_source_configs()
         if source_configs is None:
-            return self._empty_result(0)
+            return empty_result()
 
         target_configs = self._get_target_configs()
         if target_configs is None:
             print("Could not retrieve target maintenance configurations, aborting migration.")
-            return self._empty_result(len(source_configs))
+            return partial_result(len(source_configs))
 
         # Identity is the ID, because the API lets us choose it on create.
         existing_ids = {c['id'] for c in target_configs if c.get('id')}
@@ -99,7 +99,7 @@ class MaintenanceConfigsMigrator:
 
         migrated_count = 0
         updated_count = 0
-        skipped_count = 0
+        skipped_invalid = 0
         failed_count = 0
         unmigratable: List[tuple] = []
 
@@ -109,7 +109,7 @@ class MaintenanceConfigsMigrator:
 
             if not config_id or not config_name:
                 print(f"Skipping maintenance configuration with missing id or name: {source_config}")
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             # The backend rejects a window that has already elapsed, so there is
@@ -119,7 +119,7 @@ class MaintenanceConfigsMigrator:
             reason = self._unmigratable_reason(source_config)
             if reason:
                 unmigratable.append((config_name, reason))
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             already_exists = config_id in existing_ids
@@ -133,12 +133,12 @@ class MaintenanceConfigsMigrator:
 
                 if choice == 'skip':
                     print(f"Maintenance configuration '{config_name}' already exists in target, skipping")
-                    skipped_count += 1
+                    skipped_invalid += 1
                     continue
 
             payload = self._prepare_config(source_config)
             if payload is None:
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             if self._put_config(payload, config_name):
@@ -152,23 +152,25 @@ class MaintenanceConfigsMigrator:
 
         print(f"Migration complete. Found {len(source_configs)} source maintenance configurations, "
               f"migrated {migrated_count}, updated {updated_count}, "
-              f"skipped {skipped_count}, failed {failed_count}.")
+              f"skipped {skipped_invalid} ({skipped_invalid} invalid), "
+              f"failed {failed_count}.")
 
         self._report_unmigratable(unmigratable)
 
-        return {
-            "source": len(source_configs),
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped": skipped_count,
-            "failed": failed_count,
-        }
+        return make_result(
+            source=len(source_configs),
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_invalid,
+            failed=failed_count,
+            skipped_invalid=skipped_invalid,
+        )
 
-    def _dry_run(self) -> Dict[str, Any]:
+    def _dry_run(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
 
         Returns:
-            Dictionary with would-be counts using the same keys as migrate()
+            MigrationResult with would-be counts using the same keys as migrate()
         """
         source_configs, target_configs = dry_run_connectivity_check(
             self.config,
@@ -178,9 +180,9 @@ class MaintenanceConfigsMigrator:
             required_permissions=_REQUIRED_PERMISSIONS,
         )
         if source_configs is None:
-            return self._empty_result(0)
+            return empty_result()
         if target_configs is None:
-            return self._empty_result(len(source_configs))
+            return partial_result(len(source_configs))
 
         existing_ids = {c['id'] for c in target_configs if c.get('id')}
 
@@ -236,33 +238,13 @@ class MaintenanceConfigsMigrator:
         if unmigratable:
             self._report_unmigratable(unmigratable)
 
-        return {
-            "source": len(source_configs),
-            "migrated": would_create,
-            "updated": would_update,
-            "skipped": skipped_total,
-            "failed": 0,
-        }
-
-    def _empty_result(self, source_count: int) -> Dict[str, Any]:
-        """Build a zeroed result dict.
-
-        Every early return must carry source/migrated/updated/skipped because
-        cli.py reads result["migrated"] and result["updated"].
-
-        Args:
-            source_count: Number of source configurations found, if any
-
-        Returns:
-            Result dictionary with zero counts
-        """
-        return {
-            "source": source_count,
-            "migrated": 0,
-            "updated": 0,
-            "skipped": 0,
-            "failed": 0,
-        }
+        return make_result(
+            source=len(source_configs),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            skipped_invalid=skipped_total,
+        )
 
     def _report_unmigratable(self, entries: List[tuple]) -> None:
         """Explain the windows that were skipped because the backend rejects them.
