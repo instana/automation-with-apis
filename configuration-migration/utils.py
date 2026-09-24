@@ -12,31 +12,73 @@ from instana_client.exceptions import ApiException
 
 
 class MigrationResult(TypedDict):
-    """Counts returned by every migrator's ``migrate()`` method."""
+    """Counts returned by every migrator's ``migrate()`` method.
+
+    The ``skipped`` field is the total of all skip sub-categories:
+      skipped_identical + skipped_unsafe + skipped_user + skipped_invalid
+
+    Migrators that do not distinguish between skip reasons will only populate
+    ``skipped`` and leave the sub-fields as 0.
+    """
 
     source: int
     migrated: int
     updated: int
+    # Rolled-up skip total (always equals sum of sub-fields below)
     skipped: int
+    # Skip sub-categories — 0 when not applicable for a given migrator
+    skipped_identical: int  # duplicate detected, content identical
+    skipped_unsafe: int     # contains credentials / id references that cannot be migrated
+    skipped_user: int       # user explicitly chose to skip at the interactive prompt
+    skipped_invalid: int    # config is structurally invalid / unmigratable
+    failed: int
 
 
 def empty_result() -> MigrationResult:
-    """Return a zero-valued MigrationResult (used when source fetch fails)."""
-    return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+    """Return a zero-valued MigrationResult (used when source fetch or permissions fail)."""
+    return {
+        "source": 0, "migrated": 0, "updated": 0,
+        "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0,
+        "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+    }
 
 
 def partial_result(source: int) -> MigrationResult:
     """Return a MigrationResult with only source count set (used when target fetch fails)."""
-    return {"source": source, "migrated": 0, "updated": 0, "skipped": 0}
+    return {
+        "source": source, "migrated": 0, "updated": 0,
+        "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0,
+        "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+    }
 
 
-def make_result(source: int, migrated: int, updated: int, skipped: int) -> MigrationResult:
-    """Return a fully populated MigrationResult."""
+def make_result(
+    source: int,
+    migrated: int,
+    updated: int,
+    skipped: int = 0,
+    failed: int = 0,
+    skipped_identical: int = 0,
+    skipped_unsafe: int = 0,
+    skipped_user: int = 0,
+    skipped_invalid: int = 0,
+) -> MigrationResult:
+    """Return a fully populated MigrationResult.
+
+    ``skipped`` should equal the sum of all skipped_* sub-fields when they are
+    provided.  For migrators that do not break down skip reasons, pass only
+    ``skipped`` and leave the sub-fields at their default of 0.
+    """
     return {
         "source": source,
         "migrated": migrated,
         "updated": updated,
         "skipped": skipped,
+        "skipped_identical": skipped_identical,
+        "skipped_unsafe": skipped_unsafe,
+        "skipped_user": skipped_user,
+        "skipped_invalid": skipped_invalid,
+        "failed": failed,
     }
 
 

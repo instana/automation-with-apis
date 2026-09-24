@@ -196,8 +196,8 @@ def main():
             from migrator import ApplicationConfigMigrator
             migrator = ApplicationConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only when source fetch failed entirely
-            sys.exit(1 if result["source"] == 0 else 0)
+            # Exit 1 only on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
         elif args.command == 'services':
             # Import and run the service configurations migrator
@@ -205,8 +205,8 @@ def main():
             from migrator import ServiceConfigMigrator
             migrator = ServiceConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only when source fetch failed entirely
-            sys.exit(1 if result["source"] == 0 else 0)
+            # Exit 1 only on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
         elif args.command == 'endpoints':
             # Import and run the endpoint configurations migrator
@@ -214,8 +214,8 @@ def main():
             from migrator import EndpointConfigMigrator
             migrator = EndpointConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only when source fetch failed entirely
-            sys.exit(1 if result["source"] == 0 else 0)
+            # Exit 1 only on failures or when source fetch failed entirely
+            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
 
         elif args.command == 'custom-dashboards':
             # Import and run the custom dashboards migrator
