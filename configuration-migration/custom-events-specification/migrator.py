@@ -10,7 +10,8 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import MigrationResult, check_permissions, dry_run_connectivity_check, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
+from permissions import check_permissions, dry_run_connectivity_check
+from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 

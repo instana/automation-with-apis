@@ -9,11 +9,6 @@ import urllib3
 from instana_client.api.application_settings_api import ApplicationSettingsApi
 from instana_client.exceptions import ApiException
 
-# Re-exported from permissions.py — permission logic lives there to keep this
-# module focused on data-structure utilities.
-from permissions import check_permissions, dry_run_connectivity_check  # noqa: E402
-
-
 class MigrationResult(TypedDict):
     """Counts returned by every migrator's ``migrate()`` method.
 
