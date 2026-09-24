@@ -347,7 +347,8 @@ class TestCLI:
 
         mock_migrator = MagicMock()
         mock_migrator.migrate.return_value = {
-            "source": 2, "migrated": 2, "updated": 0, "skipped": 0, "website_mapping": {}
+            "source": 2, "migrated": 2, "updated": 0, "skipped": 0,
+            "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
         }
         mock_class = MagicMock(return_value=mock_migrator)
 
@@ -376,7 +377,8 @@ class TestCLI:
 
         mock_migrator = MagicMock()
         mock_migrator.migrate.return_value = {
-            "source": 2, "migrated": 0, "updated": 0, "skipped": 2, "website_mapping": {}
+            "source": 2, "migrated": 0, "updated": 0, "skipped": 2,
+            "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
         }
         mock_class = MagicMock(return_value=mock_migrator)
 

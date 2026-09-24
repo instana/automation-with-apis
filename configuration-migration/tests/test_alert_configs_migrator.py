@@ -325,7 +325,7 @@ class TestAlertConfigsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         assert mock_create.call_count == 2
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
@@ -349,7 +349,7 @@ class TestAlertConfigsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         mock_update.assert_called_once()
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
@@ -370,7 +370,7 @@ class TestAlertConfigsMigrator:
         with patch.object(self.migrator, '_create_config', return_value=True):
             result = self.migrator.migrate()
             
-            assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_user": 1, "skipped_invalid": 0, "failed": 0}
+            assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 1, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 1, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
     @patch.object(AlertConfigsMigrator, '_get_target_configs')
@@ -389,7 +389,7 @@ class TestAlertConfigsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_migrate_skip_config_without_name(self):
         """Test that configs without alertName are skipped."""
@@ -404,7 +404,7 @@ class TestAlertConfigsMigrator:
                 with patch.object(self.migrator, '_create_config', return_value=True):
                     result = self.migrator.migrate()
                     
-                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_configs_are_equal(self):
         """Test checking if source and target configs are content-equal."""
@@ -448,7 +448,7 @@ class TestAlertConfigsMigrator:
 
         # Config 1 is identical (should auto-skip)
         # Config 2 is new (should migrate)
-        assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 1, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 1, "skipped_identical": 1, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         mock_create.assert_called_once_with(source_configs[1], "Config 2")
 
     @patch('migrator.requests.get')
@@ -664,7 +664,7 @@ class TestAlertConfigsMigrator:
     def test_migrate_returns_zeros_when_source_fails(self, _mock):
         """migrate returns zero-filled dict when source fetch fails."""
         result = self.migrator.migrate()
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
     @patch.object(AlertConfigsMigrator, '_get_target_configs', return_value=None)
@@ -675,7 +675,7 @@ class TestAlertConfigsMigrator:
             {"alertName": "Config 2", "eventFilteringConfiguration": {}}
         ]
         result = self.migrator.migrate()
-        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertConfigsMigrator, '_get_source_configs')
     @patch.object(AlertConfigsMigrator, '_get_target_configs')

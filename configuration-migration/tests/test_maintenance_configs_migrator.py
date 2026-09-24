@@ -442,8 +442,7 @@ class TestMaintenanceConfigsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 2, "migrated": 2, "updated": 0,
-                          "skipped": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         assert mock_put.call_count == 2
 
     @patch.object(MaintenanceConfigsMigrator, '_put_config', return_value=True)
@@ -560,8 +559,7 @@ class TestMaintenanceConfigsMigrator:
         """A source failure returns a zeroed result carrying every key."""
         result = self.migrator.migrate()
 
-        assert result == {"source": 0, "migrated": 0, "updated": 0,
-                          "skipped": 0, "failed": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(MaintenanceConfigsMigrator, '_put_config')
     @patch.object(MaintenanceConfigsMigrator, '_get_target_configs', return_value=None)

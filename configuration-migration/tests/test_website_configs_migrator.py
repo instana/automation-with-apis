@@ -287,13 +287,13 @@ class TestWebsiteConfigMigrator:
     def test_migrate_source_fetch_error(self, _mock_src):
         """Returns zeroed counts when source fetch fails (returns None)."""
         result = self.migrator.migrate()
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(WebsiteConfigMigrator, "_get_source_website_config", return_value=[])
     def test_migrate_empty_source(self, _mock_src):
         """Returns zeroed counts when source returns an empty list."""
         result = self.migrator.migrate()
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "website_mapping": {}}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(WebsiteConfigMigrator, "_get_target_website_config", return_value=None)
     @patch.object(
@@ -321,7 +321,6 @@ class TestWebsiteConfigMigrator:
         mock_create.assert_called_once_with("Site A")
         assert result["migrated"] == 1
         assert result["skipped"] == 0
-        assert result["website_mapping"] == {"s1": "new-t1"}
 
     @patch.object(WebsiteConfigMigrator, "_create_website_config", return_value=None)
     @patch.object(WebsiteConfigMigrator, "_get_target_website_config", return_value=[])
@@ -335,7 +334,6 @@ class TestWebsiteConfigMigrator:
         result = self.migrator.migrate()
 
         assert result["migrated"] == 0
-        assert result["website_mapping"] == {}
 
     @patch.object(WebsiteConfigMigrator, "_get_target_website_config")
     @patch.object(WebsiteConfigMigrator, "_get_source_website_config")
@@ -430,5 +428,5 @@ class TestWebsiteConfigMigrator:
     def test_migrate_return_shape(self, _mock_src, _mock_tgt, _mock_create):
         """migrate() always returns a dict with all required keys."""
         result = self.migrator.migrate()
-        for key in ("source", "migrated", "updated", "skipped", "website_mapping"):
+        for key in ("source", "migrated", "updated", "skipped", "failed"):
             assert key in result, f"Key '{key}' missing from migrate() result"

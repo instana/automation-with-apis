@@ -350,7 +350,7 @@ class TestApplicationConfigMigrator:
     @patch.object(ApplicationConfigMigrator, "_get_configs", return_value=None)
     def test_migrate_returns_zeros_when_source_fetch_fails(self, _):
         result = self.migrator.migrate()
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(ApplicationConfigMigrator, "_get_configs")
     def test_migrate_returns_zeros_when_target_fetch_fails(self, mock_get):
@@ -372,12 +372,13 @@ class TestApplicationConfigMigrator:
 
     @patch.object(ApplicationConfigMigrator, "_create_config", return_value=False)
     @patch.object(ApplicationConfigMigrator, "_get_configs")
-    def test_migrate_counts_failed_create_as_skipped(self, mock_get, mock_create):
+    def test_migrate_counts_failed_create_as_failed(self, mock_get, mock_create):
         src_cfg = _make_app_cfg("App A")
         mock_get.side_effect = [[src_cfg], []]
         result = self.migrator.migrate()
         assert result["migrated"] == 0
-        assert result["skipped"] == 1
+        assert result["skipped"] == 0
+        assert result["failed"] == 1
 
     @patch.object(ApplicationConfigMigrator, "_get_configs")
     def test_migrate_skips_duplicate_when_on_duplicate_skip(self, mock_get):
@@ -403,14 +404,15 @@ class TestApplicationConfigMigrator:
 
     @patch.object(ApplicationConfigMigrator, "_update_config", return_value=False)
     @patch.object(ApplicationConfigMigrator, "_get_configs")
-    def test_migrate_failed_update_counted_as_skipped(self, mock_get, mock_update):
+    def test_migrate_failed_update_counted_as_failed(self, mock_get, mock_update):
         self.config.on_duplicate = "update"
         src = _make_app_cfg("App A")
         tgt = _make_app_cfg("App A", cfg_id="tgt-1")
         mock_get.side_effect = [[src], [tgt]]
         result = self.migrator.migrate()
         assert result["updated"] == 0
-        assert result["skipped"] == 1
+        assert result["skipped"] == 0
+        assert result["failed"] == 1
 
     @patch.object(ApplicationConfigMigrator, "_create_config")
     @patch.object(ApplicationConfigMigrator, "_get_configs")

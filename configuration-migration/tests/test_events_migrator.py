@@ -410,7 +410,7 @@ class TestEventsMigrator:
         
         result = self.migrator.migrate()
 
-        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         assert mock_create.call_count == 2
 
     @patch.object(EventsMigrator, '_get_source_events')
@@ -434,7 +434,7 @@ class TestEventsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         mock_update.assert_called_once()
 
     @patch.object(EventsMigrator, '_get_source_events')
@@ -455,7 +455,7 @@ class TestEventsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 1}
+        assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 1}
 
     @patch.object(EventsMigrator, '_get_source_events')
     @patch.object(EventsMigrator, '_get_target_events')
@@ -474,7 +474,7 @@ class TestEventsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 1}
+        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 1}
 
     @patch.object(EventsMigrator, '_get_source_events')
     def test_migrate_no_source_events(self, mock_get_source):
@@ -483,7 +483,7 @@ class TestEventsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(EventsMigrator, '_get_source_events')
     @patch.object(EventsMigrator, '_get_target_events')
@@ -496,7 +496,7 @@ class TestEventsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_migrate_skip_event_with_id_reference(self):
         """Test that events with .id in query are skipped."""
@@ -511,7 +511,7 @@ class TestEventsMigrator:
                 with patch.object(self.migrator, '_create_event', return_value=True):
                     result = self.migrator.migrate()
 
-                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 1, "skipped_user": 0, "failed": 0}
+                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 1, "skipped_identical": 0, "skipped_unsafe": 1, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_migrate_skip_event_without_name(self):
         """Test that events without name are skipped."""
@@ -526,4 +526,4 @@ class TestEventsMigrator:
                 with patch.object(self.migrator, '_create_event', return_value=True):
                     result = self.migrator.migrate()
 
-                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
