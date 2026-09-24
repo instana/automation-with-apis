@@ -9,7 +9,6 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview, prompt_duplicate
-from permissions import check_destination_permissions
 
 _REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 

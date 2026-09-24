@@ -9,7 +9,6 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from permissions import check_destination_permissions
 from utils import check_permissions, dry_run_connectivity_check, print_dry_run_preview
 
 _REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
