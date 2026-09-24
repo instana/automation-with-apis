@@ -10,7 +10,7 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from permissions import check_permissions, dry_run_connectivity_check
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
 from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureIntegrations"]
@@ -169,17 +169,16 @@ class AlertChannelsMigrator:
         Returns:
             MigrationResult with would-be counts using the same keys as migrate()
         """
-        source_channels, target_channels = dry_run_connectivity_check(
-            self.config,
-            fetch_source=self._get_source_channels,
-            fetch_target=self._get_target_channels,
-            entity_name="channels",
-            required_permissions=_REQUIRED_PERMISSIONS,
-        )
-        if source_channels is None:
+        try:
+            source_channels, target_channels = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_channels,
+                fetch_target=self._get_target_channels,
+                entity_name="channels",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
             return empty_result()
-        if target_channels is None:
-            return partial_result(len(source_channels))
 
         target_id_map: dict[str, dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
         target_name_map: dict[str, dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}

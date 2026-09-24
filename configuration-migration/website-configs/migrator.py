@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from permissions import check_permissions, dry_run_connectivity_check
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
 from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureEumApplications"]
@@ -257,17 +257,16 @@ class WebsiteConfigMigrator:
         Returns:
             MigrationResult with would-be counts using the same keys as migrate().
         """
-        source_websites, target_websites = dry_run_connectivity_check(
-            self.config,
-            fetch_source=self._get_source_website_config,
-            fetch_target=self._get_target_website_config,
-            entity_name="website configs",
-            required_permissions=_REQUIRED_PERMISSIONS,
-        )
-        if source_websites is None:
+        try:
+            source_websites, target_websites = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_website_config,
+                fetch_target=self._get_target_website_config,
+                entity_name="website configs",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
             return empty_result()
-        if target_websites is None:
-            return partial_result(len(source_websites))
 
         website_mapping = self._build_website_mapping(source_websites, target_websites)
 

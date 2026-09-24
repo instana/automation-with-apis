@@ -14,7 +14,7 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from permissions import check_permissions, dry_run_connectivity_check
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
 from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview
 
 _REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
@@ -242,27 +242,29 @@ class CustomDashboardsMigrator:
     def _dry_run_sync(self) -> MigrationResult:
         """Preview what would happen during migration without making any changes.
 
+        Uses the list endpoint (one request each for source and target) to
+        classify dashboards as would-create vs would-update.  Widget validation
+        is intentionally skipped: the list endpoint does not include widget
+        payloads, and fetching full detail per dashboard sequentially is too
+        slow to be useful in a preview (thousands of requests at ~500 ms each).
+        Any dashboards that fail widget validation during the real migration are
+        reported as skipped at that point.
+
         Returns:
             Dictionary with would-be counts using the same keys as migrate()
         """
-        fetch_source = (
-            self._async_migrator.fetch_all_source_dashboards
-            if self._use_async
-            else self._get_source_dashboards
-        )
-        source_dashboards, target_dashboards = dry_run_connectivity_check(
-            self.config,
-            fetch_source=fetch_source,
-            fetch_target=self._get_target_dashboards,
-            entity_name="dashboards",
-            required_permissions=_REQUIRED_PERMISSIONS,
-        )
-        if source_dashboards is None:
+        try:
+            source_list, target_list = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_dashboard_list,
+                fetch_target=self._get_target_dashboard_list,
+                entity_name="dashboards",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
             return empty_result()
-        if target_dashboards is None:
-            return partial_result(len(source_dashboards))
 
-        target_titles = {d.get('title') for d in target_dashboards if d.get('title')}
+        target_titles = {d.get('title') for d in target_list if d.get('title')}
 
         would_create = 0
         would_update = 0
@@ -271,43 +273,24 @@ class CustomDashboardsMigrator:
         update_lines = []
         skip_lines = []
 
-        for dashboard in source_dashboards:
-            dashboard_title = dashboard.get('title')
-
-            if not dashboard_title:
+        for entry in source_list:
+            title = entry.get('title')
+            if not title:
                 skip_lines.append("  ✗ Would skip    (dashboard with no title)")
                 skipped_invalid += 1
                 continue
-
-            if not dashboard.get('widgets'):
-                skip_lines.append(f"  ✗ Would skip    '{dashboard_title}' (invalid: no widgets)")
-                skipped_invalid += 1
-                continue
-
-            # Check widget structure
-            widget_invalid = False
-            for idx, widget in enumerate(dashboard.get('widgets', [])):
-                missing = [f for f in ('id', 'width', 'height', 'config') if not widget.get(f)]
-                if missing:
-                    skip_lines.append(f"  ✗ Would skip    '{dashboard_title}' (invalid: widget {idx} missing {', '.join(missing)})")
-                    widget_invalid = True
-                    break
-            if widget_invalid:
-                skipped_invalid += 1
-                continue
-
-            if dashboard_title in target_titles:
-                update_lines.append(f"  ~ Would update  '{dashboard_title}' (exists in target)")
+            if title in target_titles:
+                update_lines.append(f"  ~ Would update  '{title}' (exists in target)")
                 would_update += 1
             else:
-                create_lines.append(f"  ✓ Would create  '{dashboard_title}'")
+                create_lines.append(f"  ✓ Would create  '{title}'")
                 would_create += 1
 
         skipped_total = skipped_invalid
         print_dry_run_preview(
             create_lines, update_lines, skip_lines,
-            source_count=len(source_dashboards),
-            target_count=len(target_dashboards),
+            source_count=len(source_list),
+            target_count=len(target_list),
             would_create=would_create,
             would_update=would_update,
             skipped_total=skipped_total,
@@ -315,7 +298,7 @@ class CustomDashboardsMigrator:
             entity_name="dashboards",
         )
         return make_result(
-            source=len(source_dashboards),
+            source=len(source_list),
             migrated=would_create,
             updated=would_update,
             skipped=skipped_total,
@@ -416,16 +399,19 @@ class CustomDashboardsMigrator:
             return None
 
     def _get_target_dashboards(self) -> Optional[List[Dict[str, Any]]]:
-        """Get all custom dashboards from target backend.
-        
+        """Get all custom dashboards from target backend with full detail.
+
+        Used by the synchronous migrate path, which needs widget payloads for
+        equality checks and updates.
+
         Returns:
             List of custom dashboards or None if failed
         """
         try:
             print("Fetching custom dashboard IDs from target API endpoint...")
             response = requests.get(
-                f"{self.config.target_url}{self.req_custom_dashboards}", 
-                headers=self.config.get_target_headers(), 
+                f"{self.config.target_url}{self.req_custom_dashboards}",
+                headers=self.config.get_target_headers(),
                 verify=self.config.verify_ssl
             )
             response.raise_for_status()
@@ -446,6 +432,54 @@ class CustomDashboardsMigrator:
             return full_dashboards
         except requests.exceptions.RequestException as e:
             print(f"Error retrieving target dashboards: {e}")
+            return None
+
+    def _get_source_dashboard_list(self) -> Optional[List[Dict[str, Any]]]:
+        """Get the dashboard list from the source backend (id + title only).
+
+        A single request to the list endpoint.  Used by the dry-run path,
+        which only needs titles to classify dashboards as create vs update.
+
+        Returns:
+            List of ``{id, title, ...}`` dicts from the list endpoint, or None if failed
+        """
+        try:
+            print("Fetching dashboard list from source API endpoint...")
+            response = requests.get(
+                f"{self.config.source_url}{self.req_custom_dashboards}",
+                headers=self.config.get_source_headers(),
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            items = response.json()
+            print(f"Successfully fetched {len(items)} dashboards from source API")
+            return items
+        except requests.exceptions.RequestException as e:
+            print(f"Error retrieving source dashboard list: {e}")
+            return None
+
+    def _get_target_dashboard_list(self) -> Optional[List[Dict[str, Any]]]:
+        """Get the dashboard list from the target backend (id + title only).
+
+        A single request to the list endpoint.  Used by the dry-run path,
+        which only needs titles to check for existing dashboards.
+
+        Returns:
+            List of ``{id, title, ...}`` dicts from the list endpoint, or None if failed
+        """
+        try:
+            print("Fetching dashboard list from target API endpoint...")
+            response = requests.get(
+                f"{self.config.target_url}{self.req_custom_dashboards}",
+                headers=self.config.get_target_headers(),
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            items = response.json()
+            print(f"Successfully fetched {len(items)} dashboards from target API")
+            return items
+        except requests.exceptions.RequestException as e:
+            print(f"Error retrieving target dashboard list: {e}")
             return None
 
     def _get_shareable_users(self, base_url: str, headers: Dict[str, str]) -> Optional[List[Dict[str, Any]]]:

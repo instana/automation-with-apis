@@ -10,7 +10,7 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
-from permissions import check_permissions, dry_run_connectivity_check
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
 from utils import MigrationResult, build_api, empty_result, make_result, partial_result, print_api_error, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureApplications"]
@@ -144,17 +144,16 @@ class ApplicationConfigMigrator:
         target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
-        source_configs, target_configs = dry_run_connectivity_check(
-            self.config,
-            fetch_source=self._get_source_configs,
-            fetch_target=lambda: self._get_configs(target_api, "target"),
-            entity_name="application configs",
-            required_permissions=_REQUIRED_PERMISSIONS,
-        )
-        if source_configs is None:
+        try:
+            source_configs, target_configs = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_configs,
+                fetch_target=lambda: self._get_configs(target_api, "target"),
+                entity_name="application configs",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
             return empty_result()
-        if target_configs is None:
-            return partial_result(len(source_configs))
 
         target_labels = {cfg.label for cfg in target_configs}
 

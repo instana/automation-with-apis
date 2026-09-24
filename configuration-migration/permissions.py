@@ -4,9 +4,19 @@ This module owns all permission-related logic:
   - ``check_destination_permissions``: low-level raise-on-failure check.
   - ``check_permissions``: convenience wrapper that prints and returns bool.
   - ``dry_run_connectivity_check``: Steps 1 & 2 used by every _dry_run() method.
+  - ``DryRunAbortedError``: raised by dry_run_connectivity_check on any failure.
 """
 
 import requests
+
+
+class DryRunAbortedError(Exception):
+    """Raised by dry_run_connectivity_check when a step fails.
+
+    Callers should catch this in _dry_run() and return early.  The error
+    message has already been printed to stdout before the raise, so callers
+    do not need to print anything additional.
+    """
 
 
 def check_destination_permissions(config, required_fields: list[str]) -> None:
@@ -117,7 +127,7 @@ def dry_run_connectivity_check(
     fetch_target,
     entity_name: str,
     required_permissions: list[str],
-) -> tuple[list | None, list | None]:
+) -> tuple[list, list]:
     """Run the standard Steps 1 & 2 used by every _dry_run() method.
 
     Prints the connectivity and permission-check output that is identical
@@ -134,8 +144,11 @@ def dry_run_connectivity_check(
 
     Returns:
         ``(source_items, target_items)`` on full success.
-        ``(None, None)`` if the source fetch failed.
-        ``(source_items, None)`` if the target fetch or permission check failed.
+
+    Raises:
+        DryRunAbortedError: If the source fetch, destination fetch, or permission
+            check fails.  The failure message has already been printed before
+            raising.
     """
     print("[DRY RUN] Starting dry-run preview — no changes will be made.\n")
 
@@ -146,14 +159,14 @@ def dry_run_connectivity_check(
     if source_items is None:
         print(f"  FAILED — could not fetch source {entity_name}.")
         print("[DRY RUN] Aborting.")
-        return None, None
+        raise DryRunAbortedError(f"could not fetch source {entity_name}")
     print(f"  Source ... OK ({len(source_items)} {entity_name} found)")
     print(f"  Destination ({config.target_url}) ...")
     target_items = fetch_target()
     if target_items is None:
         print(f"  FAILED — could not fetch destination {entity_name}.")
         print("[DRY RUN] Aborting.")
-        return source_items, None
+        raise DryRunAbortedError(f"could not fetch destination {entity_name}")
     print(f"  Destination ... OK ({len(target_items)} {entity_name} found)\n")
 
     # --- Step 2: Permission check ---
@@ -164,6 +177,6 @@ def dry_run_connectivity_check(
     except PermissionError as exc:
         print(f"  FAILED — {exc}")
         print("[DRY RUN] Aborting.")
-        return source_items, None
+        raise DryRunAbortedError(str(exc)) from exc
 
     return source_items, target_items

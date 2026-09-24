@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from permissions import check_permissions, dry_run_connectivity_check
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
 from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
 
 _REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
@@ -140,17 +140,16 @@ class EventsMigrator:
         Returns:
             MigrationResult with would-be counts using the same keys as migrate()
         """
-        source_events, target_events = dry_run_connectivity_check(
-            self.config,
-            fetch_source=self._get_source_events,
-            fetch_target=self._get_target_events,
-            entity_name="events",
-            required_permissions=_REQUIRED_PERMISSIONS,
-        )
-        if source_events is None:
+        try:
+            source_events, target_events = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_events,
+                fetch_target=self._get_target_events,
+                entity_name="events",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
             return empty_result()
-        if target_events is None:
-            return partial_result(len(source_events))
 
         target_event_map = {e['name']: e for e in target_events if e.get('name')}
 

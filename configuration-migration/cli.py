@@ -168,8 +168,7 @@ def main():
             from migrator import EventsMigrator
             migrator = EventsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'channels':
             # Import and run the alert channels migrator
@@ -177,8 +176,7 @@ def main():
             from migrator import AlertChannelsMigrator
             migrator = AlertChannelsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'configs':
             # Import and run the alert configurations migrator
@@ -186,8 +184,7 @@ def main():
             from migrator import AlertConfigsMigrator
             migrator = AlertConfigsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'applications':
             # Import and run the application configurations migrator
@@ -195,8 +192,7 @@ def main():
             from migrator import ApplicationConfigMigrator
             migrator = ApplicationConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'services':
             # Import and run the service configurations migrator
@@ -204,8 +200,7 @@ def main():
             from migrator import ServiceConfigMigrator
             migrator = ServiceConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'endpoints':
             # Import and run the endpoint configurations migrator
@@ -213,8 +208,7 @@ def main():
             from migrator import EndpointConfigMigrator
             migrator = EndpointConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 only on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'custom-dashboards':
             # Import and run the custom dashboards migrator
@@ -222,8 +216,7 @@ def main():
             from migrator import CustomDashboardsMigrator
             migrator = CustomDashboardsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'maintenance-configs':
             # Import and run the maintenance configurations migrator
@@ -231,8 +224,7 @@ def main():
             from migrator import MaintenanceConfigsMigrator
             migrator = MaintenanceConfigsMigrator(config)
             result = migrator.migrate()
-            # Exit 1 on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
         elif args.command == 'website-configs':
             # Import and run the website configs migrator
@@ -240,8 +232,7 @@ def main():
             from migrator import WebsiteConfigMigrator
             migrator = WebsiteConfigMigrator(config)
             result = migrator.migrate()
-            # Exit 1 on failures or when source fetch failed entirely
-            sys.exit(1 if result["failed"] > 0 or result["source"] == 0 else 0)
+            sys.exit(1 if result["failed"] > 0 else 0)
 
     except ValueError as e:
         print(f"Configuration error: {e}")
