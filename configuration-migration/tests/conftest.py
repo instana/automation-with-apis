@@ -3,10 +3,21 @@
 import pytest
 import sys
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Add the parent directory to the path so we can import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+@pytest.fixture(autouse=True)
+def mock_check_permissions(request):
+    """Automatically mock check_permissions to return True for unit tests,
+    unless the test module specifically tests permissions."""
+    if "test_permissions" in request.node.nodeid:
+        yield
+        return
+    with patch("permissions.check_destination_permissions", return_value=None) as mock_perm:
+        yield mock_perm
 
 
 @pytest.fixture

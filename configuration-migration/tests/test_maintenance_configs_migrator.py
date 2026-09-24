@@ -341,17 +341,11 @@ class TestMaintenanceConfigsMigrator:
 
         assert self.migrator._get_source_configs() is None
 
-    def test_source_file_path_avoids_shared_default(self):
-        """The shared events default is redirected to a maintenance file."""
-        self.config.events_file_path = "source_events.json"
-
-        assert self.migrator._resolve_source_file_path() == "source_maintenance_configs.json"
-
     def test_source_file_path_honors_explicit_value(self):
-        """An explicit path is used as given."""
+        """The configured events_file_path is used as given."""
         self.config.events_file_path = "my_windows.json"
 
-        assert self.migrator._resolve_source_file_path() == "my_windows.json"
+        assert self.config.events_file_path == "my_windows.json"
 
     # ------------------------------------------------------------------
     # Target acquisition

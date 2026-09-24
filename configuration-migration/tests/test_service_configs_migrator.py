@@ -29,6 +29,14 @@ def _make_svc_cfg(name="My Service", cfg_id="svc-1", label="My Service",
     cfg.enabled = enabled
     cfg.match_specification = match_specification or []
     cfg.comment = comment
+    cfg.to_dict.return_value = {
+        "id": cfg_id,
+        "name": name,
+        "label": label,
+        "enabled": enabled,
+        "matchSpecification": match_specification or [],
+        "comment": comment,
+    }
     return cfg
 
 

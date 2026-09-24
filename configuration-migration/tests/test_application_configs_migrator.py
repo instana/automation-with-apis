@@ -37,6 +37,16 @@ def _make_app_cfg(label="My App", cfg_id="app-1", boundary_scope="ALL",
     cfg.access_rules = access_rules or []
     cfg.match_specification = match_specification
     cfg.tag_filter_expression = tag_filter_expression
+    cfg.to_dict.return_value = {
+        "id": cfg_id,
+        "label": label,
+        "boundaryScope": boundary_scope,
+        "businessCriticality": business_criticality,
+        "scope": scope,
+        "accessRules": access_rules or [],
+        "matchSpecification": match_specification,
+        "tagFilterExpression": tag_filter_expression,
+    }
     return cfg
 
 

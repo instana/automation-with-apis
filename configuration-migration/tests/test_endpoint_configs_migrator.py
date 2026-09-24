@@ -26,6 +26,13 @@ def _make_ep_cfg(service_id="svc-1", endpoint_case="ORIGINAL",
     cfg.endpoint_name_by_collected_path_template_rule_enabled = collected_path_rule
     cfg.endpoint_name_by_first_path_segment_rule_enabled = first_path_rule
     cfg.rules = rules
+    cfg.to_dict.return_value = {
+        "serviceId": service_id,
+        "endpointCase": endpoint_case,
+        "endpointNameByCollectedPathTemplateRuleEnabled": collected_path_rule,
+        "endpointNameByFirstPathSegmentRuleEnabled": first_path_rule,
+        "rules": rules,
+    }
     return cfg
 
 
