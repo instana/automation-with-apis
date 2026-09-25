@@ -7,8 +7,8 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from utils import build_api
 
-import instana_client
 from instana_client.api.event_settings_api import EventSettingsApi
 from instana_client.models.website_alert_config import WebsiteAlertConfig
 from instana_client.exceptions import ApiException
@@ -16,14 +16,7 @@ from instana_client.exceptions import ApiException
 
 def _build_sdk_client(url: str, token: str, verify_ssl: bool) -> EventSettingsApi:
     """Create an SDK API client for the given Instana backend."""
-    configuration = instana_client.Configuration(
-        host=url,
-        api_key={'ApiKeyAuth': token},
-        api_key_prefix={'ApiKeyAuth': 'apiToken'},
-    )
-    configuration.verify_ssl = verify_ssl
-    api_client = instana_client.ApiClient(configuration)
-    return EventSettingsApi(api_client)
+    return build_api(url, token, verify_ssl, EventSettingsApi)
 
 
 class WebsiteSmartAlertsMigrator:

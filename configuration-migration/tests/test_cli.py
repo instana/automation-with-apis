@@ -362,6 +362,64 @@ class TestCLI:
     @patch('cli.sys.exit')
     @patch('cli.Config.from_args')
     @patch('cli.argparse.ArgumentParser.parse_args')
+    def test_main_infrastructure_smart_alerts_command(self, mock_parse_args, mock_config_from_args, mock_exit):
+        """Test main function with infrastructure-smart-alerts command."""
+        mock_parse_args.return_value = _mock_args(
+            command='infrastructure-smart-alerts',
+            config_file='test_config.ini',
+            source_token='test_token', source_url='https://test.com',
+            target_token='test_token', target_url='https://test.com',
+            events_source='file', events_file_path='test.json',
+            on_duplicate='skip',
+        )
+        mock_config_from_args.return_value = MagicMock()
+
+        mock_migrator = MagicMock()
+        mock_migrator.migrate.return_value = {
+            "source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0
+        }
+        mock_class = MagicMock(return_value=mock_migrator)
+
+        mock_module = MagicMock()
+        mock_module.InfrastructureSmartAlertsMigrator = mock_class
+        with patch.dict('sys.modules', {'migrator': mock_module}):
+            main()
+
+        # Should exit with success (0) since migrated > 0
+        mock_exit.assert_called_once_with(0)
+
+    @patch('cli.sys.exit')
+    @patch('cli.Config.from_args')
+    @patch('cli.argparse.ArgumentParser.parse_args')
+    def test_main_infrastructure_smart_alerts_command_no_migration(self, mock_parse_args, mock_config_from_args, mock_exit):
+        """Test main function with infrastructure-smart-alerts command where no items were migrated or updated."""
+        mock_parse_args.return_value = _mock_args(
+            command='infrastructure-smart-alerts',
+            config_file='test_config.ini',
+            source_token='test_token', source_url='https://test.com',
+            target_token='test_token', target_url='https://test.com',
+            events_source='file', events_file_path='test.json',
+            on_duplicate='skip',
+        )
+        mock_config_from_args.return_value = MagicMock()
+
+        mock_migrator = MagicMock()
+        mock_migrator.migrate.return_value = {
+            "source": 2, "migrated": 0, "updated": 0, "skipped_identical": 2, "skipped_user": 0, "skipped_invalid": 0, "failed": 0
+        }
+        mock_class = MagicMock(return_value=mock_migrator)
+
+        mock_module = MagicMock()
+        mock_module.InfrastructureSmartAlertsMigrator = mock_class
+        with patch.dict('sys.modules', {'migrator': mock_module}):
+            main()
+
+        # Should exit with error (1) since migrated = 0 and updated = 0
+        mock_exit.assert_called_once_with(1)
+
+    @patch('cli.sys.exit')
+    @patch('cli.Config.from_args')
+    @patch('cli.argparse.ArgumentParser.parse_args')
     def test_main_website_configs_command_no_migration(self, mock_parse_args, mock_config_from_args, mock_exit):
         """Test main function with website-configs command but no successful migration."""
         mock_parse_args.return_value = _mock_args(

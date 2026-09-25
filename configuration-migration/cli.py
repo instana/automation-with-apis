@@ -146,6 +146,18 @@ def main():
         mobile_app_smart_alerts_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for mobile app smart alerts (api or file)')
         mobile_app_smart_alerts_parser.add_argument('--events-file-path', help='Path to the source alert configs JSON file (when using file source)')
 
+        # Infrastructure smart alerts migrator
+        infra_smart_alerts_parser = subparsers.add_parser('infrastructure-smart-alerts', help='Migrate infrastructure smart alert configurations')
+        infra_smart_alerts_parser.add_argument('--config-file', help='Path to configuration file')
+        infra_smart_alerts_parser.add_argument('--source-token', help='API token for source backend')
+        infra_smart_alerts_parser.add_argument('--source-url', help='URL for source backend')
+        infra_smart_alerts_parser.add_argument('--target-token', help='API token for target backend')
+        infra_smart_alerts_parser.add_argument('--target-url', help='URL for target backend')
+        infra_smart_alerts_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        infra_smart_alerts_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for infrastructure smart alerts (api or file)')
+        infra_smart_alerts_parser.add_argument('--events-file-path', help='Path to the source alert configs JSON file (when using file source)')
+        infra_smart_alerts_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate infrastructure alert config is found (default: ask)')
+
         # Website configs migrator
         website_configs_parser = subparsers.add_parser('website-configs', help='Migrate website monitoring configurations')
         website_configs_parser.add_argument('--config-file', help='Path to configuration file')
@@ -329,6 +341,19 @@ def main():
             sys.path.append(os.path.join(os.path.dirname(__file__), 'mobile-app-smart-alerts'))
             from migrator import MobileAppSmartAlertsMigrator
             migrator = MobileAppSmartAlertsMigrator(config)
+            result = migrator.migrate()
+
+            # Exit with success if at least one configuration was migrated or updated
+            if result["migrated"] > 0 or result["updated"] > 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
+
+        elif args.command == 'infrastructure-smart-alerts':
+            # Import and run the infrastructure smart alerts migrator
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'infrastructure-smart-alerts'))
+            from migrator import InfrastructureSmartAlertsMigrator
+            migrator = InfrastructureSmartAlertsMigrator(config)
             result = migrator.migrate()
 
             # Exit with success if at least one configuration was migrated or updated
