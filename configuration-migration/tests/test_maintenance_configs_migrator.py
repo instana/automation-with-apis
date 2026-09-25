@@ -6,9 +6,16 @@ import requests
 from unittest.mock import patch, mock_open, MagicMock
 import sys
 import os
+import importlib.util
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'maintenance-configs'))
-from migrator import MaintenanceConfigsMigrator, SERVER_COMPUTED_FIELDS
+_maint_dir = os.path.join(os.path.dirname(__file__), '..', 'maintenance-configs')
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_maint_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+MaintenanceConfigsMigrator = migrator.MaintenanceConfigsMigrator
+SERVER_COMPUTED_FIELDS = migrator.SERVER_COMPUTED_FIELDS
 from config import Config
 
 
@@ -67,6 +74,7 @@ class TestMaintenanceConfigsMigrator:
 
     def setup_method(self):
         """Set up test fixtures."""
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "source_token"
         self.config.source_url = "https://source.com"

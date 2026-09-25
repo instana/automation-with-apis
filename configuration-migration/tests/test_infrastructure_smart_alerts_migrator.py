@@ -5,11 +5,20 @@ import json
 from unittest.mock import patch, mock_open, MagicMock
 import sys
 import os
+import importlib.util
+import urllib3
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'infrastructure-smart-alerts'))
-from migrator import InfrastructureSmartAlertsMigrator
+_infra_dir = os.path.join(os.path.dirname(__file__), '..', 'infrastructure-smart-alerts')
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_infra_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+InfrastructureSmartAlertsMigrator = migrator.InfrastructureSmartAlertsMigrator
 from config import Config
+import utils
 from instana_client.exceptions import ApiException
+from instana_client.models.infra_alert_config import InfraAlertConfig
 
 
 class TestInfrastructureSmartAlertsMigrator:
@@ -17,6 +26,7 @@ class TestInfrastructureSmartAlertsMigrator:
 
     def setup_method(self):
         """Set up test fixtures."""
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "source_token"
         self.config.source_url = "https://source.com"
@@ -34,7 +44,7 @@ class TestInfrastructureSmartAlertsMigrator:
         assert self.migrator.config == self.config
         assert self.migrator.channel_id_map == {}
 
-    @patch('migrator.urllib3.disable_warnings')
+    @patch('base_smart_alerts_migrator.urllib3.disable_warnings')
     def test_init_with_ssl_disabled(self, mock_disable_warnings):
         """Test migrator initialization with SSL verification disabled."""
         self.config.verify_ssl = False
@@ -58,7 +68,7 @@ class TestInfrastructureSmartAlertsMigrator:
             configs = self.migrator._get_source_configs()
             assert configs is None
 
-    @patch('migrator._build_sdk_client')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_get_source_configs_from_api(self, mock_build_client):
         """Test getting source configs from Instana API."""
         self.config.events_source = "api"
@@ -72,7 +82,7 @@ class TestInfrastructureSmartAlertsMigrator:
         assert len(configs) == 1
         assert configs[0]["name"] == "Infra Alert 1"
 
-    @patch('migrator._build_sdk_client')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_get_source_configs_from_api_exception(self, mock_build_client):
         """Test API exception handling when getting source configs."""
         self.config.events_source = "api"
@@ -83,7 +93,7 @@ class TestInfrastructureSmartAlertsMigrator:
         configs = self.migrator._get_source_configs()
         assert configs is None
 
-    @patch('migrator._build_sdk_client')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_get_target_configs(self, mock_build_client):
         """Test getting target configs."""
         mock_api = MagicMock()
@@ -96,7 +106,7 @@ class TestInfrastructureSmartAlertsMigrator:
         assert len(configs) == 1
         assert configs[0]["id"] == "target-1"
 
-    @patch('migrator._build_sdk_client')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_get_target_configs_exception(self, mock_build_client):
         """Test API exception handling when getting target configs."""
         mock_api = MagicMock()
@@ -188,8 +198,8 @@ class TestInfrastructureSmartAlertsMigrator:
         }
         assert self.migrator._configs_are_equal(src, different_tgt) is False
 
-    @patch('migrator.InfraAlertConfig.from_dict')
-    @patch('migrator._build_sdk_client')
+    @patch.object(InfraAlertConfig, 'from_dict')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_create_config_success(self, mock_build_client, mock_from_dict):
         """Test successful creation of an infra alert configuration."""
         mock_api = MagicMock()
@@ -203,8 +213,8 @@ class TestInfrastructureSmartAlertsMigrator:
         assert res is True
         mock_api.create_infra_alert_config.assert_called_once()
 
-    @patch('migrator.InfraAlertConfig.from_dict')
-    @patch('migrator._build_sdk_client')
+    @patch.object(InfraAlertConfig, 'from_dict')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_create_config_api_exception(self, mock_build_client, mock_from_dict):
         """Test API failure when creating an infra alert configuration."""
         mock_api = MagicMock()
@@ -215,8 +225,8 @@ class TestInfrastructureSmartAlertsMigrator:
         res = self.migrator._create_config(config, "New Alert")
         assert res is False
 
-    @patch('migrator.InfraAlertConfig.from_dict')
-    @patch('migrator._build_sdk_client')
+    @patch.object(InfraAlertConfig, 'from_dict')
+    @patch('base_smart_alerts_migrator.build_api')
     def test_update_config_success(self, mock_build_client, mock_from_dict):
         """Test successful update of an infra alert configuration."""
         mock_api = MagicMock()

@@ -7,12 +7,19 @@ import os
 import sys
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'custom-dashboards'))
 
 from config import Config
-from migrator_async import CustomDashboardsMigratorAsync
+
+try:
+    from migrator_async import CustomDashboardsMigratorAsync
+    HAS_AIOHTTP = True
+except ImportError:
+    CustomDashboardsMigratorAsync = None
+    HAS_AIOHTTP = False
 
 
 def _make_config(**kwargs) -> Config:
@@ -41,6 +48,7 @@ def _make_dashboard(title="My Dashboard", owner_id=None, widgets=None):
     return d
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestPreparedDashboard(unittest.TestCase):
     """Unit tests for _prepare_dashboard (no I/O)."""
 
@@ -115,6 +123,7 @@ class TestPreparedDashboard(unittest.TestCase):
         self.assertEqual(result["title"], "My Dashboard")
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestMapUsers(unittest.TestCase):
     def setUp(self):
         self.loop = asyncio.new_event_loop()
@@ -139,6 +148,7 @@ class TestMapUsers(unittest.TestCase):
         self.assertEqual(self.migrator._map_users([], []), {})
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestPromptForOverrideStrategy(unittest.TestCase):
     def setUp(self):
         self.loop = asyncio.new_event_loop()
@@ -173,6 +183,7 @@ class TestPromptForOverrideStrategy(unittest.TestCase):
         self.assertFalse(result)
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestGetSourceDashboardsFromFile(unittest.TestCase):
 
     def setUp(self):
@@ -210,6 +221,7 @@ class TestGetSourceDashboardsFromFile(unittest.TestCase):
         self.assertIsNone(result)
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestCreateOrUpdateDashboardAsync(unittest.IsolatedAsyncioTestCase):
     """Unit tests for _create_or_update_dashboard_async."""
 
@@ -289,6 +301,7 @@ class TestCreateOrUpdateDashboardAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "failed")
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestMigrateDashboardsAsync(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_counted_in_results(self):
@@ -315,6 +328,7 @@ class TestMigrateDashboardsAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results, ["failed"])
 
 
+@pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp is not installed")
 class TestFindDashboardIdByTitleAsync(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_none_and_logs_on_exception(self):
