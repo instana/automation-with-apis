@@ -6,10 +6,15 @@ import os
 from unittest.mock import MagicMock, patch, call
 
 import pytest
+import importlib.util
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "endpoint-configuration"))
-from migrator import EndpointConfigMigrator
+_ep_dir = os.path.join(os.path.dirname(__file__), "..", "endpoint-configuration")
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_ep_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+EndpointConfigMigrator = migrator.EndpointConfigMigrator
 from utils import prompt_duplicate
 from config import Config
 
@@ -43,6 +48,7 @@ class TestEndpointConfigMigrator:
     """Tests for EndpointConfigMigrator."""
 
     def setup_method(self):
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "src-token"
         self.config.source_url = "https://source.example.com"
