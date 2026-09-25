@@ -26,6 +26,13 @@ def _make_ep_cfg(service_id="svc-1", endpoint_case="ORIGINAL",
     cfg.endpoint_name_by_collected_path_template_rule_enabled = collected_path_rule
     cfg.endpoint_name_by_first_path_segment_rule_enabled = first_path_rule
     cfg.rules = rules
+    cfg.to_dict.return_value = {
+        "serviceId": service_id,
+        "endpointCase": endpoint_case,
+        "endpointNameByCollectedPathTemplateRuleEnabled": collected_path_rule,
+        "endpointNameByFirstPathSegmentRuleEnabled": first_path_rule,
+        "rules": rules,
+    }
     return cfg
 
 
@@ -286,7 +293,7 @@ class TestEndpointConfigMigrator:
     @patch.object(EndpointConfigMigrator, "_get_configs", return_value=None)
     def test_migrate_returns_zeros_when_source_fetch_fails(self, _):
         result = self.migrator.migrate()
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(EndpointConfigMigrator, "_get_configs")
     def test_migrate_returns_zeros_when_target_fetch_fails(self, mock_get):
@@ -308,12 +315,13 @@ class TestEndpointConfigMigrator:
 
     @patch.object(EndpointConfigMigrator, "_create_config", return_value=False)
     @patch.object(EndpointConfigMigrator, "_get_configs")
-    def test_migrate_counts_failed_create_as_skipped(self, mock_get, _):
+    def test_migrate_counts_failed_create_as_failed(self, mock_get, _):
         src = _make_ep_cfg("svc-1")
         mock_get.side_effect = [[src], []]
         result = self.migrator.migrate()
         assert result["migrated"] == 0
-        assert result["skipped"] == 1
+        assert result["skipped"] == 0
+        assert result["failed"] == 1
 
     @patch.object(EndpointConfigMigrator, "_get_configs")
     def test_migrate_skips_duplicate_when_on_duplicate_skip(self, mock_get):
@@ -343,14 +351,15 @@ class TestEndpointConfigMigrator:
 
     @patch.object(EndpointConfigMigrator, "_update_config", return_value=False)
     @patch.object(EndpointConfigMigrator, "_get_configs")
-    def test_migrate_failed_update_counted_as_skipped(self, mock_get, _):
+    def test_migrate_failed_update_counted_as_failed(self, mock_get, _):
         self.config.on_duplicate = "update"
         src = _make_ep_cfg("svc-1")
         tgt = _make_ep_cfg("svc-1")
         mock_get.side_effect = [[src], [tgt]]
         result = self.migrator.migrate()
         assert result["updated"] == 0
-        assert result["skipped"] == 1
+        assert result["skipped"] == 0
+        assert result["failed"] == 1
 
     @patch.object(EndpointConfigMigrator, "_create_config")
     @patch.object(EndpointConfigMigrator, "_get_configs")

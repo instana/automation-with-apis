@@ -422,7 +422,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         assert mock_create.call_count == 2
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
@@ -446,7 +446,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 1, "updated": 1, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         mock_update.assert_called_once()
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
@@ -580,7 +580,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(AlertChannelsMigrator, '_get_source_channels')
     @patch.object(AlertChannelsMigrator, '_get_target_channels')
@@ -593,7 +593,7 @@ class TestAlertChannelsMigrator:
         
         result = self.migrator.migrate()
         
-        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+        assert result == {"source": 1, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     def test_migrate_skip_channel_without_name(self):
         """Test that channels without name are skipped."""
@@ -608,4 +608,4 @@ class TestAlertChannelsMigrator:
                 with patch.object(self.migrator, '_create_channel', return_value=True):
                     result = self.migrator.migrate()
                     
-                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+                    assert result == {"source": 2, "migrated": 1, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}

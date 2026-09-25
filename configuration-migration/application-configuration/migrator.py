@@ -10,7 +10,10 @@ import urllib3
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from config import Config
-from utils import MigrationResult, build_api, empty_result, make_result, partial_result, print_api_error, prompt_duplicate
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
+from utils import MigrationResult, build_api, empty_result, make_result, partial_result, print_api_error, print_dry_run_preview, prompt_duplicate
+
+_REQUIRED_PERMISSIONS = ["canConfigureApplications"]
 
 from typing import Dict, List, Optional
 
@@ -57,16 +60,19 @@ class ApplicationConfigMigrator:
         """
         self.config.validate()
 
+        if self.config.dry_run:
+            return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return empty_result()
+
         print("Starting migration of application configurations...")
 
-        source_api = build_api(
-            self.config.source_url, self.config.source_token, self.config.verify_ssl
-        )
         target_api = build_api(
             self.config.target_url, self.config.target_token, self.config.verify_ssl
         )
 
-        source_configs = self._get_configs(source_api, "source")
+        source_configs = self._get_source_configs()
         if source_configs is None:
             return empty_result()
 
@@ -78,7 +84,8 @@ class ApplicationConfigMigrator:
 
         migrated_count = 0
         updated_count = 0
-        skipped_count = 0
+        skipped_user = 0
+        failed_count = 0
         source_count = len(source_configs)
 
         for cfg in source_configs:
@@ -90,19 +97,19 @@ class ApplicationConfigMigrator:
                     if self._update_config(target_api, cfg, target_configs):
                         updated_count += 1
                     else:
-                        skipped_count += 1
+                        failed_count += 1
                 elif self.config.on_duplicate == "skip":
                     print(f"⊘ Application config '{label}' already exists, skipping...")
-                    skipped_count += 1
+                    skipped_user += 1
                 else:
                     choice = prompt_duplicate("Application config", label)
                     if choice == "skip":
-                        skipped_count += 1
+                        skipped_user += 1
                     elif choice == "update":
                         if self._update_config(target_api, cfg, target_configs):
                             updated_count += 1
                         else:
-                            skipped_count += 1
+                            failed_count += 1
                     elif choice == "cancel":
                         print("Migration cancelled by user.")
                         break
@@ -111,22 +118,160 @@ class ApplicationConfigMigrator:
             if self._create_config(target_api, cfg):
                 migrated_count += 1
             else:
-                skipped_count += 1
+                failed_count += 1
 
         print(
             f"Migration complete. Found {source_count} source application configs, "
-            f"migrated {migrated_count}, updated {updated_count}, skipped {skipped_count}."
+            f"migrated {migrated_count}, updated {updated_count}, "
+            f"skipped {skipped_user} ({skipped_user} user skipped), "
+            f"failed {failed_count}."
         )
-        return make_result(source_count, migrated_count, updated_count, skipped_count)
+        return make_result(
+            source=source_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_user,
+            failed=failed_count,
+            skipped_user=skipped_user,
+        )
+
+    def _dry_run(self) -> MigrationResult:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            Dictionary with would-be counts using the same keys as migrate().
+        """
+        target_api = build_api(
+            self.config.target_url, self.config.target_token, self.config.verify_ssl
+        )
+        try:
+            source_configs, target_configs = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_configs,
+                fetch_target=lambda: self._get_configs(target_api, "target"),
+                entity_name="application configs",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
+            return empty_result()
+
+        target_labels = {cfg.label for cfg in target_configs}
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+        create_lines: list = []
+        update_lines: list = []
+        skip_lines: list = []
+
+        for cfg in source_configs:
+            label = cfg.label
+            if not label:
+                skip_lines.append("  ✗ Would skip    (application config with missing label)")
+                skipped_invalid += 1
+                continue
+            if label in target_labels:
+                update_lines.append(f"  ~ Would update  '{label}' (exists in target)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{label}'")
+                would_create += 1
+
+        skipped_total = skipped_invalid
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_configs),
+            target_count=len(target_configs),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_invalid} invalid",
+            entity_name="application configs",
+        )
+        return make_result(
+            source=len(source_configs),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            skipped_invalid=skipped_total,
+        )
+
+    def _get_source_configs(self) -> Optional[List[ApplicationConfig]]:
+        """Get application configs from a local JSON file or the source API.
+
+        Returns:
+            List of ApplicationConfig objects or None on failure.
+        """
+        if self.config.events_source.lower() == "file":
+            file_path = self.config.events_file_path
+            try:
+                print(f"Reading application configs from {file_path}...")
+                with open(file_path, 'r') as f:
+                    items = json.load(f)
+                if not isinstance(items, list):
+                    print(f"Error: expected a JSON array in {file_path}")
+                    return None
+                for item in items:
+                    bc = item.get("businessCriticality")
+                    if isinstance(bc, int):
+                        item["businessCriticality"] = _BUSINESS_CRITICALITY_INT_TO_STR.get(bc)
+                    tfe = item.get("tagFilterExpression")
+                    if isinstance(tfe, dict):
+                        self._normalize_tag_filter(tfe)
+                configs = [ApplicationConfig.from_dict(item) for item in items]
+                print(f"Successfully loaded {len(configs)} application configs from file")
+                return configs
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                print(f"Error reading {file_path}: {e}")
+                return None
+        else:
+            source_api = build_api(
+                self.config.source_url, self.config.source_token, self.config.verify_ssl
+            )
+            configs = self._get_configs(source_api, "source")
+            if configs is not None:
+                try:
+                    with open(self.config.events_file_path, 'w') as f:
+                        json.dump([c.to_dict() for c in configs], f, indent=2)
+                except OSError as e:
+                    print(f"Warning: could not write {self.config.events_file_path}: {e}")
+            return configs
+
+    @staticmethod
+    def _normalize_tag_filter(node: dict) -> None:
+        """Coerce integer ``value`` fields in TagFilter nodes to strings in-place.
+
+        The Instana API occasionally returns tag filter values as integers
+        (e.g. HTTP status code ``200``).  The SDK's ``TagFilterAllOfValue``
+        ``oneOf`` validator rejects integers because they match both the ``int``
+        and ``float`` schemas simultaneously.  Casting to ``str`` here ensures
+        only the ``str`` schema matches.
+
+        ``tagFilterExpression`` is a recursive tree whose leaves are
+        ``TagFilter`` nodes (``type == "TAG_FILTER"``); internal nodes are
+        ``TagFilterExpression`` nodes that carry an ``elements`` list.
+        """
+        if not isinstance(node, dict):
+            return
+        node_type = node.get("type")
+        if node_type == "TAG_FILTER":
+            if isinstance(node.get("value"), int):
+                node["value"] = str(node["value"])
+        # Recurse into child elements (TagFilterExpression nodes)
+        for element in node.get("elements", []):
+            ApplicationConfigMigrator._normalize_tag_filter(element)
 
     def _get_configs(
         self, api: ApplicationSettingsApi, label: str
     ) -> Optional[List[ApplicationConfig]]:
         """Retrieve all application configs from a backend.
 
-        Fetches raw JSON so that legacy integer ``businessCriticality`` values
-        (returned by older Instana backends) are coerced to their string enum
-        equivalents before pydantic strict validation runs.
+        Fetches raw JSON so that two quirks of older Instana backends are
+        handled before pydantic strict validation runs:
+          - ``businessCriticality`` may be an integer; coerce to string enum.
+          - ``tagFilterExpression`` leaf nodes may carry integer ``value``
+            fields (e.g. HTTP status ``200``); coerce to string so the SDK's
+            ``TagFilterAllOfValue`` oneOf validator matches only ``str``.
 
         Args:
             api: The ApplicationSettingsApi client to use.
@@ -145,6 +290,9 @@ class ApplicationConfigMigrator:
                 bc = item.get("businessCriticality")
                 if isinstance(bc, int):
                     item["businessCriticality"] = _BUSINESS_CRITICALITY_INT_TO_STR.get(bc)
+                tfe = item.get("tagFilterExpression")
+                if isinstance(tfe, dict):
+                    self._normalize_tag_filter(tfe)
             configs = [ApplicationConfig.from_dict(item) for item in items]
             print(f"Fetched {len(configs)} application configs from {label}.")
             return configs

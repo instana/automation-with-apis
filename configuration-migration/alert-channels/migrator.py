@@ -1,16 +1,19 @@
 """Core functionality for migrating alert channels between backends."""
 
+import json
+import os
 import sys
+from typing import Any
+
 import requests
 import urllib3
-import json
-from typing import Dict, List, Any, Optional
 
-import sys
-import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import prompt_duplicate
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
+from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
+
+_REQUIRED_PERMISSIONS = ["canConfigureIntegrations"]
 
 
 class AlertChannelsMigrator:
@@ -29,27 +32,32 @@ class AlertChannelsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of alert channels.
-        
+
         Returns:
-            Dictionary with counts of source, migrated, updated, skipped_identical,
-            skipped_user, and failed channels
+            MigrationResult with counts of source, migrated, updated, skipped, and failed channels
         """
         # Validate configuration before proceeding
         self.config.validate()
-        
+
+        if self.config.dry_run:
+            return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return empty_result()
+
         print("Starting migration of alert channel configurations...")
-        
+
         # Get source channels
         source_channels = self._get_source_channels()
         if source_channels is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
-        
+            return empty_result()
+
         # Get target channels to avoid duplicates
         target_channels = self._get_target_channels()
         if target_channels is None:
-            return {"source": len(source_channels), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+            return partial_result(len(source_channels))
         
         print(f"Found {len(target_channels)} existing channels in target")
 
@@ -57,10 +65,10 @@ class AlertChannelsMigrator:
         # id_map gives an exact match when source and target share the same id
         # (e.g. a channel that was already migrated previously).
         # name_map is the fallback for channels that only share a name.
-        target_id_map: Dict[str, Dict[str, Any]] = {
+        target_id_map: dict[str, dict[str, Any]] = {
             c['id']: c for c in target_channels if c.get('id')
         }
-        target_name_map: Dict[str, Dict[str, Any]] = {
+        target_name_map: dict[str, dict[str, Any]] = {
             c['name']: c for c in target_channels if c.get('name')
         }
 
@@ -139,24 +147,103 @@ class AlertChannelsMigrator:
         print(
             f"Migration complete. Found {source_channels_count} source channels, "
             f"migrated {migrated_count}, updated {updated_count}, "
-            f"skipped {skipped_total} "
-            f"({skipped_identical_count} identical, "
-            f"{skipped_unsafe_count} unsafe, "
-            f"{skipped_user_count} user skipped), "
+            f"skipped {skipped_total} ({skipped_identical_count} identical, "
+            f"{skipped_unsafe_count} unsafe, {skipped_user_count} user skipped), "
             f"failed {failed_count}."
         )
 
-        return {
-            "source": source_channels_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped_identical": skipped_identical_count,
-            "skipped_unsafe": skipped_unsafe_count,
-            "skipped_user": skipped_user_count,
-            "failed": failed_count,
-        }
-    
-    def _needs_instana_url_fix(self, target_channel: Dict[str, Any]) -> bool:
+        return make_result(
+            source=source_channels_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_identical=skipped_identical_count,
+            skipped_unsafe=skipped_unsafe_count,
+            skipped_user=skipped_user_count,
+        )
+
+    def _dry_run(self) -> MigrationResult:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            MigrationResult with would-be counts using the same keys as migrate()
+        """
+        try:
+            source_channels, target_channels = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_channels,
+                fetch_target=self._get_target_channels,
+                entity_name="channels",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
+            return empty_result()
+
+        target_id_map: dict[str, dict[str, Any]] = {c['id']: c for c in target_channels if c.get('id')}
+        target_name_map: dict[str, dict[str, Any]] = {c['name']: c for c in target_channels if c.get('name')}
+
+        would_create = 0
+        would_update = 0
+        skipped_identical = 0
+        skipped_unsafe = 0
+        failed = 0
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for channel in source_channels:
+            channel_name = channel.get('name')
+            source_id = channel.get('id')
+
+            if not channel_name:
+                skip_lines.append("  ✗ Would skip    (unnamed channel)")
+                skipped_unsafe += 1
+                continue
+
+            if self._is_unsafe_to_migrate(channel):
+                skip_lines.append(f"  ✗ Would skip    '{channel_name}' (unsafe: contains credentials or system-specific fields)")
+                skipped_unsafe += 1
+                continue
+
+            target_channel = target_id_map.get(source_id) or target_name_map.get(channel_name)
+
+            if target_channel is not None:
+                if self._channels_are_identical(channel, target_channel):
+                    skip_lines.append(f"  = Would skip    '{channel_name}' (identical in target)")
+                    skipped_identical += 1
+                elif self._needs_instana_url_fix(target_channel):
+                    skip_lines.append(f"  = Would skip    '{channel_name}' (MS Teams instanaUrl mismatch — must be fixed on target manually)")
+                    skipped_identical += 1
+                else:
+                    update_lines.append(f"  ~ Would update  '{channel_name}' (exists in target, content differs)")
+                    would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{channel_name}'")
+                would_create += 1
+
+        skipped_total = skipped_identical + skipped_unsafe
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_channels),
+            target_count=len(target_channels),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_identical} identical, {skipped_unsafe} unsafe",
+            entity_name="channels",
+        )
+        return make_result(
+            source=len(source_channels),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            failed=failed,
+            skipped_identical=skipped_identical,
+            skipped_unsafe=skipped_unsafe,
+        )
+
+    def _needs_instana_url_fix(self, target_channel: dict[str, Any]) -> bool:
         """Return True when the target channel has a stale or incorrect instanaUrl.
 
         This covers channels that were created before the instanaUrl fix was in place
@@ -173,7 +260,7 @@ class AlertChannelsMigrator:
         return target_instana_url is not None and target_instana_url != self.config.target_url
 
     def _channels_are_identical(
-        self, source: Dict[str, Any], target: Dict[str, Any]
+        self, source: dict[str, Any], target: dict[str, Any]
     ) -> bool:
         """Return True when source and target channels have identical content.
 
@@ -208,7 +295,7 @@ class AlertChannelsMigrator:
         target_cmp = {k: v for k, v in target.items() if k not in ignore}
         return source_cmp == target_cmp
 
-    def _is_unsafe_to_migrate(self, channel: Dict[str, Any]) -> bool:
+    def _is_unsafe_to_migrate(self, channel: dict[str, Any]) -> bool:
         """Return True when a channel cannot be safely migrated without manual intervention.
 
         Channels are considered unsafe when the target API validates credentials or
@@ -227,7 +314,7 @@ class AlertChannelsMigrator:
         """
         return channel.get('kind') == 'SERVICE_NOW_APPLICATION'
 
-    def _format_channel_for_api(self, channel: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_channel_for_api(self, channel: dict[str, Any]) -> dict[str, Any]:
         """Format channel data according to the specific channel type requirements.
         
         Args:
@@ -347,7 +434,7 @@ class AlertChannelsMigrator:
         
         return formatted
     
-    def _get_source_channels(self) -> Optional[List[Dict[str, Any]]]:
+    def _get_source_channels(self) -> list[dict[str, Any]] | None:
         """Get all alert channel configurations from source backend or file.
         
         Returns:
@@ -388,7 +475,7 @@ class AlertChannelsMigrator:
                 print(f"Error retrieving source channels from API: {e}")
                 return None
     
-    def _get_target_channels(self) -> Optional[List[Dict[str, Any]]]:
+    def _get_target_channels(self) -> list[dict[str, Any]] | None:
         """Get all alert channel configurations from target backend.
         
         Returns:
@@ -417,7 +504,7 @@ class AlertChannelsMigrator:
         """
         return prompt_duplicate("Alert channel", channel_name)
     
-    def _create_channel(self, channel: Dict[str, Any], channel_name: str) -> bool:
+    def _create_channel(self, channel: dict[str, Any], channel_name: str) -> bool:
         """Create an alert channel in the target backend.
         
         Args:
@@ -456,7 +543,7 @@ class AlertChannelsMigrator:
             print(f"Failed to migrate alert channel '{channel_name}': {e}{f' - {error_body}' if error_body else ''}")
             return False
             
-    def _update_channel(self, channel: Dict[str, Any], channel_name: str, target_channel: Dict[str, Any]) -> bool:
+    def _update_channel(self, channel: dict[str, Any], channel_name: str, target_channel: dict[str, Any]) -> bool:
         """Update an existing alert channel in the target backend.
         
         Args:

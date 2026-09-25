@@ -10,7 +10,10 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import prompt_duplicate
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
+from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
+
+_REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 
 
 class EventsMigrator:
@@ -29,26 +32,32 @@ class EventsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of custom events.
 
         Returns:
-            Dictionary with counts of source, migrated, updated, skipped, and failed events
+            MigrationResult with counts of source, migrated, updated, skipped, and failed events
         """
         # Validate configuration before proceeding
         self.config.validate()
+
+        if self.config.dry_run:
+            return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return empty_result()
 
         print("Starting migration of custom event configurations...")
 
         # Get source events
         source_events = self._get_source_events()
         if source_events is None:
-            return {"source": 0, "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+            return empty_result()
 
         # Get target events to avoid duplicates
         target_events = self._get_target_events()
         if target_events is None:
-            return {"source": len(source_events), "migrated": 0, "updated": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "failed": 0}
+            return partial_result(len(source_events))
 
         # Build a name → event map for the target so we can compare content
         target_event_map = {e['name']: e for e in target_events if e.get('name')}
@@ -114,15 +123,91 @@ class EventsMigrator:
               f"{skipped_unsafe} unsafe query, {skipped_user} user skipped), "
               f"failed {failed_count}.")
 
-        return {
-            "source": source_events_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped_identical": skipped_identical,
-            "skipped_unsafe": skipped_unsafe,
-            "skipped_user": skipped_user,
-            "failed": failed_count,
-        }
+        return make_result(
+            source=source_events_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_identical=skipped_identical,
+            skipped_unsafe=skipped_unsafe,
+            skipped_user=skipped_user,
+        )
+
+    def _dry_run(self) -> MigrationResult:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            MigrationResult with would-be counts using the same keys as migrate()
+        """
+        try:
+            source_events, target_events = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_events,
+                fetch_target=self._get_target_events,
+                entity_name="events",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
+            return empty_result()
+
+        target_event_map = {e['name']: e for e in target_events if e.get('name')}
+
+        would_create = 0
+        would_update = 0
+        skipped_identical = 0
+        skipped_unsafe = 0
+        failed = 0
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for event in source_events:
+            event_name = event.get('name')
+            event_query: Any | None = event.get('query')
+
+            if not event_name:
+                skip_lines.append("  ✗ Would skip    (unnamed event)")
+                skipped_unsafe += 1
+                continue
+
+            if event_query and isinstance(event_query, str) and ".id" in event_query:
+                skip_lines.append(f"  ✗ Would skip    '{event_name}' (unsafe: query contains .id reference)")
+                skipped_unsafe += 1
+                continue
+
+            if event_name in target_event_map:
+                target_event = target_event_map[event_name]
+                if self._events_are_equal(event, target_event):
+                    skip_lines.append(f"  = Would skip    '{event_name}' (identical in target)")
+                    skipped_identical += 1
+                else:
+                    update_lines.append(f"  ~ Would update  '{event_name}' (exists in target, content differs)")
+                    would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{event_name}'")
+                would_create += 1
+
+        skipped_total = skipped_identical + skipped_unsafe
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_events),
+            target_count=len(target_events),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_identical} identical, {skipped_unsafe} unsafe",
+            entity_name="events",
+        )
+        return make_result(
+            source=len(source_events),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            failed=failed,
+            skipped_identical=skipped_identical,
+            skipped_unsafe=skipped_unsafe,
+        )
     
     def _get_source_events(self) -> Optional[List[Dict[str, Any]]]:
         """Get all custom event configurations from source backend or file.

@@ -1,42 +1,82 @@
 """Shared utilities for configuration migration modules."""
 
 import json
-from typing import TypedDict
-
 import sys
+from typing import TypedDict
 
 import instana_client
 import urllib3
 from instana_client.api.application_settings_api import ApplicationSettingsApi
 from instana_client.exceptions import ApiException
 
-
 class MigrationResult(TypedDict):
-    """Counts returned by every migrator's ``migrate()`` method."""
+    """Counts returned by every migrator's ``migrate()`` method.
+
+    The ``skipped`` field is the total of all skip sub-categories:
+      skipped_identical + skipped_unsafe + skipped_user + skipped_invalid
+
+    Migrators that do not distinguish between skip reasons will only populate
+    ``skipped`` and leave the sub-fields as 0.
+    """
 
     source: int
     migrated: int
     updated: int
+    # Rolled-up skip total (always equals sum of sub-fields below)
     skipped: int
+    # Skip sub-categories — 0 when not applicable for a given migrator
+    skipped_identical: int  # duplicate detected, content identical
+    skipped_unsafe: int     # contains credentials / id references that cannot be migrated
+    skipped_user: int       # user explicitly chose to skip at the interactive prompt
+    skipped_invalid: int    # config is structurally invalid / unmigratable
+    failed: int
 
 
 def empty_result() -> MigrationResult:
-    """Return a zero-valued MigrationResult (used when source fetch fails)."""
-    return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
+    """Return a zero-valued MigrationResult (used when source fetch or permissions fail)."""
+    return {
+        "source": 0, "migrated": 0, "updated": 0,
+        "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0,
+        "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+    }
 
 
 def partial_result(source: int) -> MigrationResult:
     """Return a MigrationResult with only source count set (used when target fetch fails)."""
-    return {"source": source, "migrated": 0, "updated": 0, "skipped": 0}
+    return {
+        "source": source, "migrated": 0, "updated": 0,
+        "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0,
+        "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+    }
 
 
-def make_result(source: int, migrated: int, updated: int, skipped: int) -> MigrationResult:
-    """Return a fully populated MigrationResult."""
+def make_result(
+    source: int,
+    migrated: int,
+    updated: int,
+    skipped: int = 0,
+    failed: int = 0,
+    skipped_identical: int = 0,
+    skipped_unsafe: int = 0,
+    skipped_user: int = 0,
+    skipped_invalid: int = 0,
+) -> MigrationResult:
+    """Return a fully populated MigrationResult.
+
+    ``skipped`` should equal the sum of all skipped_* sub-fields when they are
+    provided.  For migrators that do not break down skip reasons, pass only
+    ``skipped`` and leave the sub-fields at their default of 0.
+    """
     return {
         "source": source,
         "migrated": migrated,
         "updated": updated,
         "skipped": skipped,
+        "skipped_identical": skipped_identical,
+        "skipped_unsafe": skipped_unsafe,
+        "skipped_user": skipped_user,
+        "skipped_invalid": skipped_invalid,
+        "failed": failed,
     }
 
 
@@ -92,6 +132,58 @@ def build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
     configuration.verify_ssl = verify_ssl
     api_client = instana_client.ApiClient(configuration)
     return ApplicationSettingsApi(api_client)
+
+def print_dry_run_preview(
+    create_lines: list[str],
+    update_lines: list[str],
+    skip_lines: list[str],
+    source_count: int,
+    target_count: int,
+    would_create: int,
+    would_update: int,
+    skipped_total: int,
+    skipped_detail: str,
+    entity_name: str,
+) -> None:
+    """Print the standard Step 3 preview table and dry-run summary.
+
+    Prints the ``--- Preview ---`` block (create/update/skip lines) and the
+    ``--- Dry-run summary ---`` table that is identical in structure across
+    every migrator.
+
+    Args:
+        create_lines: Lines prefixed with ``✓ Would create``.
+        update_lines: Lines prefixed with ``~ Would update``.
+        skip_lines: Lines prefixed with ``✗ Would skip`` or ``= Would skip``.
+        source_count: Total items fetched from the source.
+        target_count: Total items currently in the target.
+        would_create: Count of items that would be created.
+        would_update: Count of items that would be updated.
+        skipped_total: Total items that would be skipped.
+        skipped_detail: Human-readable breakdown, e.g. ``"3 invalid"`` or
+            ``"2 identical, 1 unsafe"``.  Shown in parentheses on the skip line.
+        entity_name: Plural label used in the summary, e.g. ``"configs"``.
+    """
+    print("[Step 3] Comparing configurations ...")
+    print("--- Preview ---")
+    for line in create_lines:
+        print(line)
+    for line in update_lines:
+        print(line)
+    if skip_lines:
+        print()
+        for line in skip_lines:
+            print(line)
+
+    print("\n--- Dry-run summary ---")
+    label_w = max(len(f"Source {entity_name}"), len(f"Target {entity_name} now")) + 2
+    print(f"  {'Source ' + entity_name:<{label_w}}: {source_count}")
+    print(f"  {'Target ' + entity_name + ' now':<{label_w}}: {target_count}")
+    print(f"  {'Would be created':<{label_w}}: {would_create}")
+    print(f"  {'Would be updated':<{label_w}}: {would_update}")
+    print(f"  {'Would skip':<{label_w}}: {skipped_total}  ({skipped_detail})")
+    print(f"\n  Target {entity_name} after migration would be: {target_count + would_create}")
+    print("\n[DRY RUN] No changes were made.")
 
 
 def print_api_error(prefix: str, e: ApiException) -> None:

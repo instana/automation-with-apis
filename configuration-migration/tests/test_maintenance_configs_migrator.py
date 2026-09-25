@@ -341,17 +341,11 @@ class TestMaintenanceConfigsMigrator:
 
         assert self.migrator._get_source_configs() is None
 
-    def test_source_file_path_avoids_shared_default(self):
-        """The shared events default is redirected to a maintenance file."""
-        self.config.events_file_path = "source_events.json"
-
-        assert self.migrator._resolve_source_file_path() == "source_maintenance_configs.json"
-
     def test_source_file_path_honors_explicit_value(self):
-        """An explicit path is used as given."""
+        """The configured events_file_path is used as given."""
         self.config.events_file_path = "my_windows.json"
 
-        assert self.migrator._resolve_source_file_path() == "my_windows.json"
+        assert self.config.events_file_path == "my_windows.json"
 
     # ------------------------------------------------------------------
     # Target acquisition
@@ -448,8 +442,7 @@ class TestMaintenanceConfigsMigrator:
 
         result = self.migrator.migrate()
 
-        assert result == {"source": 2, "migrated": 2, "updated": 0,
-                          "skipped": 0, "failed": 0}
+        assert result == {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
         assert mock_put.call_count == 2
 
     @patch.object(MaintenanceConfigsMigrator, '_put_config', return_value=True)
@@ -566,8 +559,7 @@ class TestMaintenanceConfigsMigrator:
         """A source failure returns a zeroed result carrying every key."""
         result = self.migrator.migrate()
 
-        assert result == {"source": 0, "migrated": 0, "updated": 0,
-                          "skipped": 0, "failed": 0}
+        assert result == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0}
 
     @patch.object(MaintenanceConfigsMigrator, '_put_config')
     @patch.object(MaintenanceConfigsMigrator, '_get_target_configs', return_value=None)

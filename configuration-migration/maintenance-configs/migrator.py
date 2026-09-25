@@ -1,16 +1,20 @@
 """Core functionality for migrating maintenance configurations between backends."""
 
-import sys
+import json
 import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 import requests
 import urllib3
-import json
-from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
-from utils import prompt_duplicate
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
+from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview, prompt_duplicate
+
+_REQUIRED_PERMISSIONS = ["canConfigureMaintenanceWindows"]
 
 # Fields the list endpoint returns but the create/update endpoint does not
 # accept. They are all computed by the server, so they must be dropped before
@@ -37,11 +41,6 @@ UNMIGRATABLE_STATES = {
     'UNSCHEDULED': 'already unscheduled',
 }
 
-# Config.events_file_path is shared by every migrator and defaults to this.
-# Writing maintenance configs there would clobber the custom events file.
-DEFAULT_EVENTS_FILE = "source_events.json"
-MAINTENANCE_FILE = "source_maintenance_configs.json"
-
 
 class MaintenanceConfigsMigrator:
     """Handles migration of maintenance configurations between backends.
@@ -66,26 +65,32 @@ class MaintenanceConfigsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def migrate(self) -> Dict[str, Any]:
+    def migrate(self) -> MigrationResult:
         """Perform the migration of maintenance configurations.
 
         Returns:
-            Dictionary with counts of source, migrated, updated, skipped and
+            MigrationResult with counts of source, migrated, updated, skipped and
             failed configurations
         """
         # Validate configuration before proceeding
         self.config.validate()
 
+        if self.config.dry_run:
+            return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return empty_result()
+
         print("Starting migration of maintenance configurations...")
 
         source_configs = self._get_source_configs()
         if source_configs is None:
-            return self._empty_result(0)
+            return empty_result()
 
         target_configs = self._get_target_configs()
         if target_configs is None:
             print("Could not retrieve target maintenance configurations, aborting migration.")
-            return self._empty_result(len(source_configs))
+            return partial_result(len(source_configs))
 
         # Identity is the ID, because the API lets us choose it on create.
         existing_ids = {c['id'] for c in target_configs if c.get('id')}
@@ -93,7 +98,8 @@ class MaintenanceConfigsMigrator:
 
         migrated_count = 0
         updated_count = 0
-        skipped_count = 0
+        skipped_invalid = 0
+        skipped_user = 0
         failed_count = 0
         unmigratable: List[tuple] = []
 
@@ -103,7 +109,7 @@ class MaintenanceConfigsMigrator:
 
             if not config_id or not config_name:
                 print(f"Skipping maintenance configuration with missing id or name: {source_config}")
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             # The backend rejects a window that has already elapsed, so there is
@@ -113,7 +119,7 @@ class MaintenanceConfigsMigrator:
             reason = self._unmigratable_reason(source_config)
             if reason:
                 unmigratable.append((config_name, reason))
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             already_exists = config_id in existing_ids
@@ -127,12 +133,12 @@ class MaintenanceConfigsMigrator:
 
                 if choice == 'skip':
                     print(f"Maintenance configuration '{config_name}' already exists in target, skipping")
-                    skipped_count += 1
+                    skipped_user += 1
                     continue
 
             payload = self._prepare_config(source_config)
             if payload is None:
-                skipped_count += 1
+                skipped_invalid += 1
                 continue
 
             if self._put_config(payload, config_name):
@@ -144,39 +150,102 @@ class MaintenanceConfigsMigrator:
             else:
                 failed_count += 1
 
+        skipped_total = skipped_invalid + skipped_user
         print(f"Migration complete. Found {len(source_configs)} source maintenance configurations, "
               f"migrated {migrated_count}, updated {updated_count}, "
-              f"skipped {skipped_count}, failed {failed_count}.")
+              f"skipped {skipped_total} ({skipped_invalid} invalid, {skipped_user} user skipped), "
+              f"failed {failed_count}.")
 
         self._report_unmigratable(unmigratable)
 
-        return {
-            "source": len(source_configs),
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped": skipped_count,
-            "failed": failed_count,
-        }
+        return make_result(
+            source=len(source_configs),
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_invalid=skipped_invalid,
+            skipped_user=skipped_user,
+        )
 
-    def _empty_result(self, source_count: int) -> Dict[str, Any]:
-        """Build a zeroed result dict.
-
-        Every early return must carry source/migrated/updated/skipped because
-        cli.py reads result["migrated"] and result["updated"].
-
-        Args:
-            source_count: Number of source configurations found, if any
+    def _dry_run(self) -> MigrationResult:
+        """Preview what would happen during migration without making any changes.
 
         Returns:
-            Result dictionary with zero counts
+            MigrationResult with would-be counts using the same keys as migrate()
         """
-        return {
-            "source": source_count,
-            "migrated": 0,
-            "updated": 0,
-            "skipped": 0,
-            "failed": 0,
-        }
+        try:
+            source_configs, target_configs = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_configs,
+                fetch_target=self._get_target_configs,
+                entity_name="maintenance configurations",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
+            return empty_result()
+
+        existing_ids = {c['id'] for c in target_configs if c.get('id')}
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+        unmigratable: List[tuple] = []
+        create_lines = []
+        update_lines = []
+        skip_lines = []
+
+        for source_config in source_configs:
+            config_id = source_config.get('id')
+            config_name = source_config.get('name', 'unknown')
+
+            if not config_id or not config_name:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: missing id or name)")
+                skipped_invalid += 1
+                continue
+
+            reason = self._unmigratable_reason(source_config)
+            if reason:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: {reason})")
+                unmigratable.append((config_name, reason))
+                skipped_invalid += 1
+                continue
+
+            payload = self._prepare_config(source_config)
+            if payload is None:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: failed payload validation)")
+                skipped_invalid += 1
+                continue
+
+            if config_id in existing_ids:
+                update_lines.append(f"  ~ Would update  '{config_name}' (exists in target)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{config_name}'")
+                would_create += 1
+
+        skipped_total = skipped_invalid
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_configs),
+            target_count=len(target_configs),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_invalid} invalid/unmigratable",
+            entity_name="maintenance configurations",
+        )
+
+        if unmigratable:
+            self._report_unmigratable(unmigratable)
+
+        return make_result(
+            source=len(source_configs),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            skipped_invalid=skipped_total,
+        )
 
     def _report_unmigratable(self, entries: List[tuple]) -> None:
         """Explain the windows that were skipped because the backend rejects them.
@@ -328,22 +397,6 @@ class MaintenanceConfigsMigrator:
             "target",
         )
 
-    def _resolve_source_file_path(self) -> str:
-        """Pick where to persist fetched configurations.
-
-        events_file_path is shared by all migrators and defaults to
-        source_events.json, so writing here would destroy the custom events
-        source file.
-
-        Returns:
-            Path to write the fetched configurations to
-        """
-        if self.config.events_file_path == DEFAULT_EVENTS_FILE:
-            print(f"Note: writing fetched maintenance configurations to {MAINTENANCE_FILE} "
-                  f"(use --events-file-path to override)")
-            return MAINTENANCE_FILE
-        return self.config.events_file_path
-
     def _write_source_file(self, configs: List[Dict[str, Any]]) -> None:
         """Persist fetched configurations so they can be reused as a file source.
 
@@ -357,7 +410,7 @@ class MaintenanceConfigsMigrator:
             "sourceUrl": self.config.source_url,
             "maintenanceConfigs": configs,
         }
-        file_path = self._resolve_source_file_path()
+        file_path = self.config.events_file_path
         try:
             with open(file_path, 'w') as f:
                 json.dump(envelope, f, indent=2)

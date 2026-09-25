@@ -73,7 +73,7 @@ class TestCLI:
         mock_config_from_args.return_value = MagicMock()
 
         mock_migrator = MagicMock()
-        mock_migrator.migrate.return_value = {"source": 2, "migrated": 2, "updated": 0, "skipped": 0}
+        mock_migrator.migrate.return_value = {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "failed": 0}
         mock_class = MagicMock(return_value=mock_migrator)
 
         mock_module = MagicMock()
@@ -99,7 +99,7 @@ class TestCLI:
         mock_config_from_args.return_value = MagicMock()
 
         mock_migrator = MagicMock()
-        mock_migrator.migrate.return_value = {"source": 2, "migrated": 0, "updated": 0, "skipped": 2}
+        mock_migrator.migrate.return_value = {"source": 2, "migrated": 0, "updated": 0, "skipped": 2, "failed": 1}
         mock_class = MagicMock(return_value=mock_migrator)
 
         mock_module = MagicMock()
@@ -107,7 +107,7 @@ class TestCLI:
         with patch.dict('sys.modules', {'migrator': mock_module}):
             main()
 
-        # Should exit with error (1) since migrated = 0
+        # Should exit with error (1) since failed > 0
         mock_exit.assert_called_once_with(1)
 
     @patch('cli.sys.exit')
@@ -125,7 +125,7 @@ class TestCLI:
         mock_config_from_args.return_value = MagicMock()
 
         mock_migrator = MagicMock()
-        mock_migrator.migrate.return_value = {"source": 2, "migrated": 0, "updated": 1, "skipped": 1}
+        mock_migrator.migrate.return_value = {"source": 2, "migrated": 0, "updated": 1, "skipped": 1, "failed": 0}
         mock_class = MagicMock(return_value=mock_migrator)
 
         mock_module = MagicMock()
@@ -206,7 +206,7 @@ class TestCLI:
         mock_config_from_args.return_value = MagicMock()
 
         mock_migrator = MagicMock()
-        mock_migrator.migrate.return_value = {"migrated": 2, "updated": 0, "skipped": 0}
+        mock_migrator.migrate.return_value = {"source": 2, "migrated": 2, "updated": 0, "skipped": 0, "failed": 0}
         mock_class = MagicMock(return_value=mock_migrator)
 
         mock_module = MagicMock()
@@ -232,7 +232,7 @@ class TestCLI:
         mock_config_from_args.return_value = MagicMock()
 
         mock_migrator = MagicMock()
-        mock_migrator.migrate.return_value = {"migrated": 0, "updated": 0, "skipped": 2}
+        mock_migrator.migrate.return_value = {"source": 2, "migrated": 0, "updated": 0, "skipped": 2, "failed": 1}
         mock_class = MagicMock(return_value=mock_migrator)
 
         mock_module = MagicMock()
@@ -240,7 +240,7 @@ class TestCLI:
         with patch.dict('sys.modules', {'migrator': mock_module}):
             main()
 
-        # Should exit with error (1) since migrated = 0
+        # Should exit with error (1) since failed > 0
         mock_exit.assert_called_once_with(1)
 
     @patch('cli.sys.exit')
@@ -298,8 +298,8 @@ class TestCLI:
         with patch.dict('sys.modules', {'migrator': mock_module}):
             main()
 
-        # Should exit with error (1) since migrated = 0 and updated = 0
-        mock_exit.assert_called_once_with(1)
+        # Should exit with success (0) since source > 0
+        mock_exit.assert_called_once_with(0)
 
     @patch('cli.sys.exit')
     @patch('cli.Config.from_args')
@@ -347,7 +347,8 @@ class TestCLI:
 
         mock_migrator = MagicMock()
         mock_migrator.migrate.return_value = {
-            "source": 2, "migrated": 2, "updated": 0, "skipped": 0, "website_mapping": {}
+            "source": 2, "migrated": 2, "updated": 0, "skipped": 0,
+            "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
         }
         mock_class = MagicMock(return_value=mock_migrator)
 
@@ -376,7 +377,8 @@ class TestCLI:
 
         mock_migrator = MagicMock()
         mock_migrator.migrate.return_value = {
-            "source": 2, "migrated": 0, "updated": 0, "skipped": 2, "website_mapping": {}
+            "source": 2, "migrated": 0, "updated": 0, "skipped": 2,
+            "skipped_identical": 0, "skipped_unsafe": 0, "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
         }
         mock_class = MagicMock(return_value=mock_migrator)
 
@@ -385,5 +387,5 @@ class TestCLI:
         with patch.dict('sys.modules', {'migrator': mock_module}):
             main()
 
-        # Should exit with error (1) since migrated = 0 and updated = 0
-        mock_exit.assert_called_once_with(1)
+        # Should exit with success (0) since source > 0
+        mock_exit.assert_called_once_with(0)

@@ -120,6 +120,43 @@ uv run configuration-migration/cli.py events --help
 
 The tool provides a unified CLI with multiple subcommands for different resource types:
 
+#### Dry Run (Preview Before Migrating)
+
+All subcommands support a `--dry-run` flag. It connects to both backends, compares source and target configurations, then prints a per-item preview of what *would* happen — without writing anything to the target.
+
+```bash
+# Using a config file
+uv run cli.py events --dry-run --config-file config.ini
+
+# Passing credentials directly on the command line
+uv run cli.py events \
+  --dry-run \
+  --source-token YOUR_SOURCE_TOKEN \
+  --source-url https://source-backend.example.com \
+  --target-token YOUR_TARGET_TOKEN \
+  --target-url https://target-backend.example.com
+
+# Works with every subcommand — just swap the subcommand name
+uv run cli.py channels \
+  --dry-run \
+  --source-token YOUR_SOURCE_TOKEN \
+  --source-url https://source-backend.example.com \
+  --target-token YOUR_TARGET_TOKEN \
+  --target-url https://target-backend.example.com
+
+# Combine with other flags — e.g. read source from a local file
+uv run cli.py events \
+  --dry-run \
+  --events-source file \
+  --events-file-path source_events.json \
+  --target-token YOUR_TARGET_TOKEN \
+  --target-url https://target-backend.example.com
+```
+
+Dry run can also be enabled via the config file (`dry_run = true` under `[general]`) or the environment variable `EVENTS_MIGRATOR_DRY_RUN=true`.
+
+---
+
 #### Custom Events Migration
 
 ```bash
@@ -319,6 +356,7 @@ url = https://target-backend.example.com
 verify_ssl = true
 events_source = api  # Use 'api' to fetch from API or 'file' to read from local file
 events_file_path = source_events.json  # Path to read/write events JSON file
+dry_run = false  # Set to true to preview changes without writing anything
 ```
 
 ### Environment Variables
@@ -332,6 +370,7 @@ You can also configure the tool using environment variables:
 - `EVENTS_MIGRATOR_VERIFY_SSL`: Set to "false" to disable SSL verification
 - `EVENTS_MIGRATOR_EVENTS_SOURCE`: Set to "api" or "file" to specify events source
 - `EVENTS_MIGRATOR_EVENTS_FILE_PATH`: Path to the events JSON file
+- `EVENTS_MIGRATOR_DRY_RUN`: Set to "true" to preview changes without writing anything
 
 ## Configuration Priority
 
