@@ -2,12 +2,15 @@
 
 import json
 import sys
-from typing import TypedDict
+from typing import TypedDict, Type, TypeVar
 
 import instana_client
 import urllib3
 from instana_client.api.application_settings_api import ApplicationSettingsApi
 from instana_client.exceptions import ApiException
+
+T = TypeVar("T")
+
 
 class MigrationResult(TypedDict):
     """Counts returned by every migrator's ``migrate()`` method.
@@ -113,16 +116,22 @@ def prompt_duplicate(entity_type: str, name: str) -> str:
         print("Invalid choice. Please try again.")
 
 
-def build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
-    """Create a configured ApplicationSettingsApi client.
+def build_api(
+    url: str,
+    token: str,
+    verify_ssl: bool,
+    api_cls: Type[T] = ApplicationSettingsApi,
+) -> T:
+    """Create a configured Instana SDK API client for any given API class.
 
     Args:
         url: Base URL of the Instana backend.
         token: API token for authentication.
         verify_ssl: Whether to verify SSL certificates.
+        api_cls: The instana_client API class to instantiate (defaults to ApplicationSettingsApi).
 
     Returns:
-        Configured ApplicationSettingsApi instance.
+        Configured instance of api_cls.
     """
     configuration = instana_client.Configuration(
         host=url,
@@ -131,7 +140,7 @@ def build_api(url: str, token: str, verify_ssl: bool) -> ApplicationSettingsApi:
     )
     configuration.verify_ssl = verify_ssl
     api_client = instana_client.ApiClient(configuration)
-    return ApplicationSettingsApi(api_client)
+    return api_cls(api_client)
 
 def print_dry_run_preview(
     create_lines: list[str],
