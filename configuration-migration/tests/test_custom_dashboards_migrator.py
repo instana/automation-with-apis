@@ -5,11 +5,14 @@ from unittest.mock import patch, MagicMock
 import sys
 import os
 
-import importlib
+import importlib.util
 
-# Add the parent directory to the sys.path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'custom-dashboards'))
-migrator_module = importlib.import_module("migrator")
+# Load the custom-dashboards migrator directly by path to avoid sys.modules collision
+_custom_dashboards_dir = os.path.join(os.path.dirname(__file__), '..', 'custom-dashboards')
+sys.path.insert(0, _custom_dashboards_dir)
+_spec = importlib.util.spec_from_file_location("custom_dashboards_migrator", os.path.join(_custom_dashboards_dir, "migrator.py"))
+migrator_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator_module)
 CustomDashboardsMigrator = migrator_module.CustomDashboardsMigrator
 from config import Config
 

@@ -21,17 +21,21 @@ def run_tests():
     
     # Test files to run
     test_files = [
+        'tests/test_utils.py',
         'tests/test_config.py',
         'tests/test_cli.py',
         'tests/test_events_migrator.py',
         'tests/test_alert_channels_migrator.py',
         'tests/test_alert_configs_migrator.py',
         'tests/test_custom_dashboards_migrator.py',
+        'tests/test_custom_dashboards_migrator_async.py',
         'tests/test_maintenance_configs_migrator.py',
         'tests/test_website_configs_migrator.py',
         'tests/test_application_configs_migrator.py',
         'tests/test_service_configs_migrator.py',
-        'tests/test_endpoint_configs_migrator.py'
+        'tests/test_endpoint_configs_migrator.py',
+        'tests/test_base_smart_alerts_migrator.py',
+        'tests/test_infrastructure_smart_alerts_migrator.py',
     ]
     
     total_passed = 0

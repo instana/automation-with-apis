@@ -6,9 +6,15 @@ import requests
 from unittest.mock import patch, mock_open, MagicMock
 import sys
 import os
+import importlib.util
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'alert-channels'))
-from migrator import AlertChannelsMigrator
+_channels_dir = os.path.join(os.path.dirname(__file__), '..', 'alert-channels')
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_channels_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+AlertChannelsMigrator = migrator.AlertChannelsMigrator
 from config import Config
 
 
@@ -17,6 +23,7 @@ class TestAlertChannelsMigrator:
 
     def setup_method(self):
         """Set up test fixtures."""
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "source_token"
         self.config.source_url = "https://source.com"

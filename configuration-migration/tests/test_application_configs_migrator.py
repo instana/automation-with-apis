@@ -6,14 +6,17 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+import importlib.util
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "application-configuration"))
-from migrator import (
-    ApplicationConfigMigrator,
-    _BUSINESS_CRITICALITY_INT_TO_STR,
-    _BUSINESS_CRITICALITY_STR_TO_INT,
-)
+_app_dir = os.path.join(os.path.dirname(__file__), "..", "application-configuration")
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_app_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+ApplicationConfigMigrator = migrator.ApplicationConfigMigrator
+_BUSINESS_CRITICALITY_INT_TO_STR = migrator._BUSINESS_CRITICALITY_INT_TO_STR
+_BUSINESS_CRITICALITY_STR_TO_INT = migrator._BUSINESS_CRITICALITY_STR_TO_INT
 from utils import print_api_error, prompt_duplicate
 from config import Config
 
@@ -54,6 +57,7 @@ class TestApplicationConfigMigrator:
     """Tests for ApplicationConfigMigrator."""
 
     def setup_method(self):
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "src-token"
         self.config.source_url = "https://source.example.com"

@@ -6,10 +6,15 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+import importlib.util
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "service-configuration"))
-from migrator import ServiceConfigMigrator
+_svc_dir = os.path.join(os.path.dirname(__file__), "..", "service-configuration")
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_svc_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+ServiceConfigMigrator = migrator.ServiceConfigMigrator
 from utils import print_api_error, prompt_duplicate
 from config import Config
 
@@ -46,6 +51,7 @@ class TestServiceConfigMigrator:
     """Tests for ServiceConfigMigrator."""
 
     def setup_method(self):
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "src-token"
         self.config.source_url = "https://source.example.com"
