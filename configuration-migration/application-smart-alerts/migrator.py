@@ -1,4 +1,5 @@
 import copy
+import json
 import requests
 from typing import Dict, List, Any, Optional
 import sys
@@ -11,6 +12,8 @@ from instana_client.api.application_alert_configuration_api import ApplicationAl
 from instana_client.models.application_alert_config import ApplicationAlertConfig
 from instana_client.exceptions import ApiException
 
+_API_ENDPOINT = "/api/events/settings/application-alert-configs"
+
 
 class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "application smart alert"
@@ -19,6 +22,7 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
     def __init__(self, config: Config):
         super().__init__(config)
         self.application_id_map: Dict[str, str] = {}
+        self.application_name_map: Dict[str, str] = {}
         self._application_map_fetched = False
 
     def _init_resource_maps(self) -> None:
@@ -27,35 +31,52 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
 
     def _fetch_source_configs_from_api(self) -> Optional[List[Dict[str, Any]]]:
         try:
-            api = self._get_sdk_client(self.config.source_url, self.config.source_token)
-            results = api.find_all_active_application_alert_configs(application_id=None)
-            return [r.to_dict() if hasattr(r, 'to_dict') else r for r in results]
-        except ApiException as e:
+            response = requests.get(
+                f"{self.config.source_url}{_API_ENDPOINT}",
+                headers=self.config.get_source_headers(),
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            configs = response.json()
+
+            with open(self.config.events_file_path, 'w') as f:
+                json.dump(configs, f, indent=2)
+
+            return configs
+        except requests.RequestException as e:
             print(f"Error retrieving source alert configurations from API: {e}")
             return None
 
     def _get_target_configs(self) -> Optional[List[Dict[str, Any]]]:
         try:
-            api = self._get_sdk_client(self.config.target_url, self.config.target_token)
-            results = api.find_all_active_application_alert_configs(application_id=None)
-            return [r.to_dict() if hasattr(r, 'to_dict') else r for r in results]
-        except ApiException as e:
+            response = requests.get(
+                f"{self.config.target_url}{_API_ENDPOINT}",
+                headers=self.config.get_target_headers(),
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
             print(f"Error retrieving target alert configurations: {e}")
             return None
 
     def _create_config(self, config: Dict[str, Any], config_name: str) -> Optional[bool]:
         try:
             payload = self._format_config_for_api(config)
-            sdk_config = ApplicationAlertConfig.from_dict(payload)
-            api = self._get_sdk_client(self.config.target_url, self.config.target_token)
-            result = api.create_application_alert_config(sdk_config)
-            result_id = result.id if hasattr(result, 'id') else 'unknown'
+            response = requests.post(
+                f"{self.config.target_url}{_API_ENDPOINT}",
+                json=payload,
+                headers=self.config.get_target_headers(),
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            result_id = response.json().get('id', 'unknown')
             print(f"Migrated application smart alert configuration '{config_name}' (Target ID: {result_id})")
             return True
         except ValueError as e:
             print(f"Skipping application smart alert configuration '{config_name}': {e}")
             return None
-        except ApiException as e:
+        except requests.RequestException as e:
             print(f"Failed to migrate application smart alert configuration '{config_name}'")
             print(f"Error: {e}")
             return False
@@ -63,16 +84,20 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
     def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
         try:
             payload = self._format_config_for_api(config)
-            sdk_config = ApplicationAlertConfig.from_dict(payload)
-            api = self._get_sdk_client(self.config.target_url, self.config.target_token)
-            result = api.update_application_alert_config(id=target_id, application_alert_config=sdk_config)
-            result_id = result.id if (result and hasattr(result, 'id')) else target_id
+            response = requests.put(
+                f"{self.config.target_url}{_API_ENDPOINT}/{target_id}",
+                json=payload,
+                headers=self.config.get_target_headers(),
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            result_id = response.json().get('id', target_id)
             print(f"Updated application smart alert configuration '{config_name}' (Target ID: {result_id})")
             return True
         except ValueError as e:
             print(f"Skipping application smart alert configuration '{config_name}': {e}")
             return None
-        except ApiException as e:
+        except requests.RequestException as e:
             print(f"Failed to update application smart alert configuration '{config_name}'")
             print(f"Error: {e}")
             return False
@@ -80,6 +105,10 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
     def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
         formatted = copy.deepcopy(config)
         self._strip_common_metadata(formatted)
+
+        # Strip server-managed field from nested threshold object
+        if isinstance(formatted.get('threshold'), dict):
+            formatted['threshold'].pop('lastUpdated', None)
 
         if 'name' not in formatted:
             raise ValueError("Alert configuration must have a 'name' field")
@@ -92,8 +121,9 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             if src_app_id in self.application_id_map:
                 formatted['applicationId'] = self.application_id_map[src_app_id]
             elif self._application_map_fetched and validate:
+                src_app_name = self.application_name_map.get(src_app_id, src_app_id)
                 raise ValueError(
-                    f"applicationId '{src_app_id}' not found in target — "
+                    f"application '{src_app_name}' not found in target — "
                     "ensure the application exists in the target system"
                 )
 
@@ -113,9 +143,10 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
                 else:
                     unmatched_apps.append(app_id)
             if unmatched_apps and validate:
+                unmatched_names = [self.application_name_map.get(i, i) for i in unmatched_apps]
                 raise ValueError(
-                    f"{len(unmatched_apps)} application(s) not found in target "
-                    f"and cannot be remapped: {unmatched_apps}. Ensure the "
+                    f"{len(unmatched_names)} application(s) not found in target "
+                    f"and cannot be remapped: {unmatched_names}. Ensure the "
                     "application(s) exist in the target system before migrating."
                 )
             formatted['applications'] = remapped_apps
@@ -128,16 +159,7 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             source_apps: List[Dict[str, Any]] = []
             app_endpoint = '/api/application-monitoring/settings/application'
 
-            if self.config.events_source.lower() == "file":
-                if self.config.source_url and self.config.source_token:
-                    response = requests.get(
-                        f"{self.config.source_url}{app_endpoint}",
-                        headers=self.config.get_source_headers(),
-                        verify=self.config.verify_ssl,
-                    )
-                    if response.status_code == 200:
-                        source_apps = response.json()
-            else:
+            if self.config.source_url and self.config.source_token:
                 response = requests.get(
                     f"{self.config.source_url}{app_endpoint}",
                     headers=self.config.get_source_headers(),
@@ -162,6 +184,8 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             for sa in source_apps:
                 sa_key = sa.get('label') or sa.get('name')
                 sa_id = sa.get('id')
+                if sa_id and sa_key:
+                    self.application_name_map[str(sa_id)] = str(sa_key)
                 if sa_key and sa_id and str(sa_key) in target_by_name:
                     application_id_map[str(sa_id)] = target_by_name[str(sa_key)]
 

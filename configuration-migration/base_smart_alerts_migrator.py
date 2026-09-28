@@ -10,8 +10,11 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 from config import Config
-from utils import build_api
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
+from utils import MigrationResult, build_api, empty_result, make_result, print_dry_run_preview
 from instana_client.exceptions import ApiException
+
+_REQUIRED_PERMISSIONS = ["canConfigureEventsAndAlerts"]
 
 
 class BaseSmartAlertsMigrator:
@@ -27,9 +30,15 @@ class BaseSmartAlertsMigrator:
         if not config.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def migrate(self) -> Dict[str, int]:
+    def migrate(self) -> MigrationResult:
         """Execute the migration workflow for smart alert configurations."""
         self.config.validate()
+
+        if self.config.dry_run:
+            return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return empty_result()
 
         self._init_resource_maps()
 
@@ -113,15 +122,109 @@ class BaseSmartAlertsMigrator:
               f"{skipped_user} user skipped, {skipped_invalid} invalid), "
               f"failed {failed_count}.")
 
-        return {
-            "source": source_count,
-            "migrated": migrated_count,
-            "updated": updated_count,
-            "skipped_identical": skipped_identical,
-            "skipped_user": skipped_user,
-            "skipped_invalid": skipped_invalid,
-            "failed": failed_count,
-        }
+        return make_result(
+            source=source_count,
+            migrated=migrated_count,
+            updated=updated_count,
+            skipped=skipped_total,
+            failed=failed_count,
+            skipped_identical=skipped_identical,
+            skipped_user=skipped_user,
+            skipped_invalid=skipped_invalid,
+        )
+
+    def _dry_run(self) -> MigrationResult:
+        """Preview what would happen during migration without making any changes.
+
+        Returns:
+            MigrationResult with would-be counts using the same keys as migrate()
+        """
+        try:
+            source_configs, target_configs = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_configs,
+                fetch_target=self._get_target_configs,
+                entity_name=f"{self.entity_type_name} configurations",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
+            return empty_result()
+
+        # Build resource ID maps for accurate remapping preview
+        self._init_resource_maps()
+
+        target_by_id = {c.get('id'): c for c in target_configs if c.get('id')}
+        target_config_names = {c.get('name') for c in target_configs if c.get('name')}
+
+        would_create = 0
+        would_update = 0
+        skipped_identical = 0
+        skipped_invalid = 0
+        create_lines: List[str] = []
+        update_lines: List[str] = []
+        skip_lines: List[str] = []
+
+        for config in source_configs:
+            config_name = config.get('name')
+            if not config_name:
+                skip_lines.append(f"  ✗ Would skip    (unnamed {self.entity_type_name} configuration)")
+                skipped_invalid += 1
+                continue
+
+            # Check validity via format (no writes) — use validate=True so unmappable
+            # IDs (application, website, mobile app) are caught the same way the real
+            # migration would catch them.
+            invalid_reason = None
+            try:
+                self._format_config_for_api(config, validate=True)
+            except ValueError as e:
+                invalid_reason = str(e)
+
+            if invalid_reason is not None:
+                skip_lines.append(f"  ✗ Would skip    '{config_name}' (invalid: {invalid_reason})")
+                skipped_invalid += 1
+                continue
+
+            source_id = config.get('id')
+            target_config = target_by_id.get(source_id) if source_id else None
+            if target_config is None and config_name in target_config_names:
+                target_config = next(
+                    (c for c in target_configs if c.get('name') == config_name), None
+                )
+
+            if target_config:
+                if self._configs_are_equal(config, target_config):
+                    skip_lines.append(f"  = Would skip    '{config_name}' (identical in target)")
+                    skipped_identical += 1
+                else:
+                    update_lines.append(
+                        f"  ~ Would update  '{config_name}' (exists in target, content differs)"
+                    )
+                    would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{config_name}'")
+                would_create += 1
+
+        skipped_total = skipped_identical + skipped_invalid
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_configs),
+            target_count=len(target_configs),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_identical} identical, {skipped_invalid} invalid",
+            entity_name=f"{self.entity_type_name} configurations",
+        )
+        return make_result(
+            source=len(source_configs),
+            migrated=would_create,
+            updated=would_update,
+            skipped=skipped_total,
+            failed=0,
+            skipped_identical=skipped_identical,
+            skipped_invalid=skipped_invalid,
+        )
 
     def _init_resource_maps(self) -> None:
         """Hook for subclasses to fetch dependent ID maps."""
@@ -200,7 +303,8 @@ class BaseSmartAlertsMigrator:
         read_only_fields = [
             'id', 'created', 'initialCreated', 'lastUpdated', 'invalid',
             'readOnly', 'enabled', 'alertChannelNames', 'websiteName',
-            'mobileAppName', 'applicationNames'
+            'mobileAppName', 'applicationNames',
+            'derivedFromGlobalAlert', 'displayUrl',
         ]
         for field in read_only_fields:
             formatted.pop(field, None)
@@ -251,16 +355,7 @@ class BaseSmartAlertsMigrator:
         try:
             source_channels: List[Dict[str, Any]] = []
 
-            if self.config.events_source.lower() == "file":
-                if self.config.source_url and self.config.source_token:
-                    response = requests.get(
-                        f"{self.config.source_url}/api/events/settings/alertingChannels",
-                        headers=self.config.get_source_headers(),
-                        verify=self.config.verify_ssl,
-                    )
-                    if response.status_code == 200:
-                        source_channels = response.json()
-            else:
+            if self.config.source_url and self.config.source_token:
                 response = requests.get(
                     f"{self.config.source_url}/api/events/settings/alertingChannels",
                     headers=self.config.get_source_headers(),
