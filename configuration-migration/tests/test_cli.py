@@ -392,8 +392,8 @@ class TestCLI:
     @patch('cli.sys.exit')
     @patch('cli.Config.from_args')
     @patch('cli.argparse.ArgumentParser.parse_args')
-    def test_main_infrastructure_smart_alerts_command_no_migration(self, mock_parse_args, mock_config_from_args, mock_exit):
-        """Test main function with infrastructure-smart-alerts command where no items were migrated or updated."""
+    def test_main_infrastructure_smart_alerts_command_all_skipped(self, mock_parse_args, mock_config_from_args, mock_exit):
+        """Test main function with infrastructure-smart-alerts command where all items were skipped (no failures)."""
         mock_parse_args.return_value = _mock_args(
             command='infrastructure-smart-alerts',
             config_file='test_config.ini',
@@ -415,8 +415,8 @@ class TestCLI:
         with patch.dict('sys.modules', {'migrator': mock_module}):
             main()
 
-        # Should exit with error (1) since migrated = 0 and updated = 0
-        mock_exit.assert_called_once_with(1)
+        # All skipped, zero failures → exit 0
+        mock_exit.assert_called_once_with(0)
 
     @patch('cli.sys.exit')
     @patch('cli.Config.from_args')

@@ -2,6 +2,7 @@
 
 import pytest
 import json
+import requests
 from unittest.mock import patch, mock_open, MagicMock
 import sys
 import os
@@ -68,50 +69,44 @@ class TestInfrastructureSmartAlertsMigrator:
             configs = self.migrator._get_source_configs()
             assert configs is None
 
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_get_source_configs_from_api(self, mock_build_client):
+    @patch('requests.get')
+    def test_get_source_configs_from_api(self, mock_get):
         """Test getting source configs from Instana API."""
         self.config.events_source = "api"
-        mock_api = MagicMock()
-        mock_item = MagicMock()
-        mock_item.to_dict.return_value = {"id": "1", "name": "Infra Alert 1"}
-        mock_api.find_active_infra_alert_configs.return_value = [mock_item]
-        mock_build_client.return_value = mock_api
+        mock_response = MagicMock()
+        mock_response.json.return_value = [{"id": "1", "name": "Infra Alert 1"}]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
 
         configs = self.migrator._get_source_configs()
         assert len(configs) == 1
         assert configs[0]["name"] == "Infra Alert 1"
 
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_get_source_configs_from_api_exception(self, mock_build_client):
-        """Test API exception handling when getting source configs."""
+    @patch('requests.get')
+    def test_get_source_configs_from_api_exception(self, mock_get):
+        """Test request exception handling when getting source configs."""
         self.config.events_source = "api"
-        mock_api = MagicMock()
-        mock_api.find_active_infra_alert_configs.side_effect = ApiException(status=500, reason="Server Error")
-        mock_build_client.return_value = mock_api
+        mock_get.side_effect = requests.RequestException("connection error")
 
         configs = self.migrator._get_source_configs()
         assert configs is None
 
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_get_target_configs(self, mock_build_client):
+    @patch('requests.get')
+    def test_get_target_configs(self, mock_get):
         """Test getting target configs."""
-        mock_api = MagicMock()
-        mock_item = MagicMock()
-        mock_item.to_dict.return_value = {"id": "target-1", "name": "Infra Alert Target"}
-        mock_api.find_active_infra_alert_configs.return_value = [mock_item]
-        mock_build_client.return_value = mock_api
+        mock_response = MagicMock()
+        mock_response.json.return_value = [{"id": "target-1", "name": "Infra Alert Target"}]
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
 
         configs = self.migrator._get_target_configs()
         assert len(configs) == 1
         assert configs[0]["id"] == "target-1"
 
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_get_target_configs_exception(self, mock_build_client):
-        """Test API exception handling when getting target configs."""
-        mock_api = MagicMock()
-        mock_api.find_active_infra_alert_configs.side_effect = ApiException(status=500, reason="Server Error")
-        mock_build_client.return_value = mock_api
+    @patch('requests.get')
+    def test_get_target_configs_exception(self, mock_get):
+        """Test request exception handling when getting target configs."""
+        mock_get.side_effect = requests.RequestException("connection error")
 
         configs = self.migrator._get_target_configs()
         assert configs is None
@@ -197,47 +192,40 @@ class TestInfrastructureSmartAlertsMigrator:
         }
         assert self.migrator._configs_are_equal(src, different_tgt) is False
 
-    @patch.object(InfraAlertConfig, 'from_dict')
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_create_config_success(self, mock_build_client, mock_from_dict):
+    @patch('requests.post')
+    def test_create_config_success(self, mock_post):
         """Test successful creation of an infra alert configuration."""
-        mock_api = MagicMock()
-        mock_result = MagicMock()
-        mock_result.id = "new-id"
-        mock_api.create_infra_alert_config.return_value = mock_result
-        mock_build_client.return_value = mock_api
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"id": "new-id", "name": "New Alert"}
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
 
         config = {"name": "New Alert", "granularity": 60000}
         res = self.migrator._create_config(config, "New Alert")
         assert res is True
-        mock_api.create_infra_alert_config.assert_called_once()
+        mock_post.assert_called_once()
 
-    @patch.object(InfraAlertConfig, 'from_dict')
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_create_config_api_exception(self, mock_build_client, mock_from_dict):
-        """Test API failure when creating an infra alert configuration."""
-        mock_api = MagicMock()
-        mock_api.create_infra_alert_config.side_effect = ApiException(status=400, reason="Bad Request")
-        mock_build_client.return_value = mock_api
+    @patch('requests.post')
+    def test_create_config_api_exception(self, mock_post):
+        """Test HTTP failure when creating an infra alert configuration."""
+        mock_post.side_effect = requests.RequestException("500 Server Error")
 
         config = {"name": "New Alert", "granularity": 60000}
         res = self.migrator._create_config(config, "New Alert")
         assert res is False
 
-    @patch.object(InfraAlertConfig, 'from_dict')
-    @patch('base_smart_alerts_migrator.build_api')
-    def test_update_config_success(self, mock_build_client, mock_from_dict):
+    @patch('requests.put')
+    def test_update_config_success(self, mock_put):
         """Test successful update of an infra alert configuration."""
-        mock_api = MagicMock()
-        mock_result = MagicMock()
-        mock_result.id = "target-id"
-        mock_api.update_infra_alert_config.return_value = mock_result
-        mock_build_client.return_value = mock_api
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"id": "target-id", "name": "Existing Alert"}
+        mock_response.raise_for_status = MagicMock()
+        mock_put.return_value = mock_response
 
         config = {"name": "Existing Alert", "granularity": 60000}
         res = self.migrator._update_config(config, "target-id", "Existing Alert")
         assert res is True
-        mock_api.update_infra_alert_config.assert_called_once()
+        mock_put.assert_called_once()
 
     @patch('requests.get')
     def test_get_channel_id_map(self, mock_get):
