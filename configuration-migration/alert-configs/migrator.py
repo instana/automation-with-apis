@@ -223,7 +223,7 @@ class AlertConfigsMigrator:
         )
 
     def _get_source_configs(self) -> list[dict[str, Any]] | None:
-        if self.config.events_source == "file":
+        if self.config.events_source.lower() == "file":
             try:
                 file_path = self.config.events_file_path
                 print(f"Reading alert configurations from {file_path} file...")
@@ -433,7 +433,7 @@ class AlertConfigsMigrator:
         channel_id_map = {}
         try:
             source_channels = []
-            if self.config.events_source == "file":
+            if self.config.events_source.lower() == "file":
                 if self.config.source_url and self.config.source_token:
                     response = requests.get(
                         f"{self.config.source_url}/api/events/settings/alertingChannels",
@@ -477,7 +477,7 @@ class AlertConfigsMigrator:
         event_id_map = {}
         try:
             source_events = []
-            if self.config.events_source == "file":
+            if self.config.events_source.lower() == "file":
                 if self.config.source_url and self.config.source_token:
                     response = requests.get(
                         f"{self.config.source_url}/api/events/settings/event-specifications/custom",

@@ -19,9 +19,21 @@ class TestUtils:
 
     def test_migration_result_helpers(self):
         """Test result helper functions."""
-        assert empty_result() == {"source": 0, "migrated": 0, "updated": 0, "skipped": 0}
-        assert partial_result(5) == {"source": 5, "migrated": 0, "updated": 0, "skipped": 0}
-        assert make_result(10, 5, 2, 3) == {"source": 10, "migrated": 5, "updated": 2, "skipped": 3}
+        assert empty_result() == {
+            "source": 0, "migrated": 0, "updated": 0,
+            "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0,
+            "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+        }
+        assert partial_result(5) == {
+            "source": 5, "migrated": 0, "updated": 0,
+            "skipped": 0, "skipped_identical": 0, "skipped_unsafe": 0,
+            "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+        }
+        assert make_result(10, 5, 2, 3) == {
+            "source": 10, "migrated": 5, "updated": 2,
+            "skipped": 3, "skipped_identical": 0, "skipped_unsafe": 0,
+            "skipped_user": 0, "skipped_invalid": 0, "failed": 0,
+        }
 
     @patch('instana_client.ApiClient')
     @patch('instana_client.Configuration')

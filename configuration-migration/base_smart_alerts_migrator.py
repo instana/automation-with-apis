@@ -19,7 +19,6 @@ class BaseSmartAlertsMigrator:
 
     entity_type_name: str = "smart alert"
     api_class: Optional[Type[Any]] = None
-    model_class: Optional[Type[Any]] = None
 
     def __init__(self, config: Config):
         self.config = config
@@ -136,7 +135,7 @@ class BaseSmartAlertsMigrator:
 
     def _get_source_configs(self) -> Optional[List[Dict[str, Any]]]:
         """Fetch source configurations from file or API."""
-        if self.config.events_source == "file":
+        if self.config.events_source.lower() == "file":
             try:
                 with open(self.config.events_file_path, 'r') as f:
                     configs = json.load(f)
@@ -209,7 +208,6 @@ class BaseSmartAlertsMigrator:
     def _remap_alert_channels(self, formatted: Dict[str, Any], validate: bool = True) -> None:
         """Remap alertChannelIds list and alertChannels dict in formatted config."""
         formatted.setdefault('alertChannelIds', [])
-        formatted.setdefault('customPayloadFields', [])
 
         if isinstance(formatted.get('alertChannelIds'), list):
             remapped = []
@@ -228,6 +226,7 @@ class BaseSmartAlertsMigrator:
 
         if isinstance(formatted.get('alertChannels'), dict):
             remapped_alert_channels = {}
+            unmatched_dict_channels = []
             for sev, ch_ids in formatted['alertChannels'].items():
                 if isinstance(ch_ids, list):
                     sev_remapped = []
@@ -236,9 +235,14 @@ class BaseSmartAlertsMigrator:
                             sev_remapped.append(self.channel_id_map[item])
                         elif not self._channel_map_fetched:
                             sev_remapped.append(item)
+                        else:
+                            unmatched_dict_channels.append(item)
                     remapped_alert_channels[sev] = sev_remapped
                 else:
                     remapped_alert_channels[sev] = ch_ids
+            if unmatched_dict_channels and validate:
+                print(f"  Warning: '{formatted.get('name')}' — {len(unmatched_dict_channels)} alert channel ID(s) "
+                      f"in alertChannels not found in target and will be omitted: {unmatched_dict_channels}")
             formatted['alertChannels'] = remapped_alert_channels
 
     def _get_channel_id_map(self) -> Dict[str, str]:
@@ -247,7 +251,7 @@ class BaseSmartAlertsMigrator:
         try:
             source_channels: List[Dict[str, Any]] = []
 
-            if self.config.events_source == "file":
+            if self.config.events_source.lower() == "file":
                 if self.config.source_url and self.config.source_token:
                     response = requests.get(
                         f"{self.config.source_url}/api/events/settings/alertingChannels",

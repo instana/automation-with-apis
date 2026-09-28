@@ -1,5 +1,6 @@
 """Unit tests for the BaseSmartAlertsMigrator class."""
 
+import copy
 import pytest
 import json
 from unittest.mock import patch, mock_open, MagicMock
@@ -27,7 +28,7 @@ class DummySmartAlertsMigrator(BaseSmartAlertsMigrator):
         return True
 
     def _format_config_for_api(self, config, validate=True):
-        formatted = dict(config)
+        formatted = copy.deepcopy(config)
         self._strip_common_metadata(formatted)
         self._remap_alert_channels(formatted, validate=validate)
         return formatted

@@ -1,5 +1,6 @@
 """Core functionality for migrating alert channels between backends."""
 
+import copy
 import json
 import os
 import sys
@@ -324,7 +325,7 @@ class AlertChannelsMigrator:
             Formatted channel data for API request
         """
         # Create a copy to avoid modifying the original
-        formatted = channel.copy()
+        formatted = copy.deepcopy(channel)
         
         # Remove fields that must not be sent to the target API.
         # Note: 'id', 'kind', and 'name' are mandatory in the POST/PUT body per the API spec.

@@ -15,7 +15,6 @@ from instana_client.exceptions import ApiException
 class InfrastructureSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "infrastructure smart alert"
     api_class = InfrastructureAlertConfigurationApi
-    model_class = InfraAlertConfig
 
     def _fetch_source_configs_from_api(self) -> Optional[List[Dict[str, Any]]]:
         try:

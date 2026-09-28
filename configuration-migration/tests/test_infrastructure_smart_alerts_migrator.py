@@ -146,7 +146,6 @@ class TestInfrastructureSmartAlertsMigrator:
         assert "alertChannelNames" not in formatted
         assert formatted["name"] == "Host CPU high"
         assert formatted["alertChannelIds"] == ["target-c1", "target-c2"]
-        assert formatted["customPayloadFields"] == []
         assert formatted["groupBy"] == []
 
     def test_format_config_for_api_missing_name(self):

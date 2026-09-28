@@ -15,7 +15,6 @@ from instana_client.exceptions import ApiException
 class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "application smart alert"
     api_class = ApplicationAlertConfigurationApi
-    model_class = ApplicationAlertConfig
 
     def __init__(self, config: Config):
         super().__init__(config)
@@ -129,7 +128,7 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             source_apps: List[Dict[str, Any]] = []
             app_endpoint = '/api/application-monitoring/settings/application'
 
-            if self.config.events_source == "file":
+            if self.config.events_source.lower() == "file":
                 if self.config.source_url and self.config.source_token:
                     response = requests.get(
                         f"{self.config.source_url}{app_endpoint}",
