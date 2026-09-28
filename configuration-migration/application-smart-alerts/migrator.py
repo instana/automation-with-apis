@@ -7,16 +7,9 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from base_smart_alerts_migrator import BaseSmartAlertsMigrator
-from utils import build_api
-
 from instana_client.api.application_alert_configuration_api import ApplicationAlertConfigurationApi
 from instana_client.models.application_alert_config import ApplicationAlertConfig
 from instana_client.exceptions import ApiException
-
-
-def _build_sdk_client(url: str, token: str, verify_ssl: bool) -> ApplicationAlertConfigurationApi:
-    """Create an SDK API client for the given Instana backend."""
-    return build_api(url, token, verify_ssl, ApplicationAlertConfigurationApi)
 
 
 class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
@@ -26,14 +19,11 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
 
     def __init__(self, config: Config):
         super().__init__(config)
-        self.event_id_map: Dict[str, str] = {}
         self.application_id_map: Dict[str, str] = {}
-        self._event_map_fetched = False
         self._application_map_fetched = False
 
     def _init_resource_maps(self) -> None:
         super()._init_resource_maps()
-        self.event_id_map = self._get_event_id_map()
         self.application_id_map = self._get_application_id_map()
 
     def _fetch_source_configs_from_api(self) -> Optional[List[Dict[str, Any]]]:
@@ -132,55 +122,6 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             formatted['applications'] = remapped_apps
 
         return formatted
-
-    def _get_event_id_map(self) -> Dict[str, str]:
-        event_id_map: Dict[str, str] = {}
-        try:
-            source_events: List[Dict[str, Any]] = []
-            events_endpoint = '/api/events/settings/event-specifications/custom'
-
-            if self.config.events_source == "file":
-                if self.config.source_url and self.config.source_token:
-                    response = requests.get(
-                        f"{self.config.source_url}{events_endpoint}",
-                        headers=self.config.get_source_headers(),
-                        verify=self.config.verify_ssl,
-                    )
-                    if response.status_code == 200:
-                        source_events = response.json()
-            else:
-                response = requests.get(
-                    f"{self.config.source_url}{events_endpoint}",
-                    headers=self.config.get_source_headers(),
-                    verify=self.config.verify_ssl,
-                )
-                if response.status_code == 200:
-                    source_events = response.json()
-
-            response = requests.get(
-                f"{self.config.target_url}{events_endpoint}",
-                headers=self.config.get_target_headers(),
-                verify=self.config.verify_ssl,
-            )
-            target_events = response.json() if response.status_code == 200 else []
-
-            target_by_name: Dict[str, str] = {
-                str(e['name']): str(e['id'])
-                for e in target_events
-                if e.get('name') and e.get('id')
-            }
-            for se in source_events:
-                se_name = se.get('name')
-                se_id = se.get('id')
-                if se_name and se_id and se_name in target_by_name:
-                    event_id_map[str(se_id)] = target_by_name[str(se_name)]
-
-            self._event_map_fetched = True
-
-        except Exception as e:
-            print(f"Warning: Failed to build custom event specifications ID map: {e}")
-
-        return event_id_map
 
     def _get_application_id_map(self) -> Dict[str, str]:
         application_id_map: Dict[str, str] = {}

@@ -7,16 +7,10 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
 from base_smart_alerts_migrator import BaseSmartAlertsMigrator
-from utils import build_api
 
 from instana_client.api.event_settings_api import EventSettingsApi
 from instana_client.models.mobile_app_alert_config import MobileAppAlertConfig
 from instana_client.exceptions import ApiException
-
-
-def _build_sdk_client(url: str, token: str, verify_ssl: bool) -> EventSettingsApi:
-    """Create an SDK API client for the given Instana backend."""
-    return build_api(url, token, verify_ssl, EventSettingsApi)
 
 
 class MobileAppSmartAlertsMigrator(BaseSmartAlertsMigrator):
