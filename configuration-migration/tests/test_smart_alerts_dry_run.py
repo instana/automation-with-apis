@@ -93,7 +93,7 @@ class TestDryRunAbortPaths:
 
     @patch("base_smart_alerts_migrator.dry_run_connectivity_check")
     def test_connectivity_check_receives_correct_permissions(self, mock_check):
-        """dry_run_connectivity_check is called with _REQUIRED_PERMISSIONS."""
+        """dry_run_connectivity_check is called with the migrator's required_permissions."""
         mock_check.return_value = ([], [])
         migrator = _get_infra_migrator(_make_config())
         migrator._init_resource_maps = MagicMock()
@@ -101,7 +101,7 @@ class TestDryRunAbortPaths:
         migrator._dry_run()
 
         _, kwargs = mock_check.call_args
-        assert kwargs["required_permissions"] == _REQUIRED_PERMISSIONS
+        assert kwargs["required_permissions"] == migrator.required_permissions
 
 
 # ---------------------------------------------------------------------------

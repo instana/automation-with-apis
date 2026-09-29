@@ -22,6 +22,7 @@ class BaseSmartAlertsMigrator:
 
     entity_type_name: str = "smart alert"
     api_class: Optional[Type[Any]] = None
+    required_permissions: list = _REQUIRED_PERMISSIONS
 
     def __init__(self, config: Config):
         self.config = config
@@ -37,7 +38,7 @@ class BaseSmartAlertsMigrator:
         if self.config.dry_run:
             return self._dry_run()
 
-        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+        if not check_permissions(self.config, self.required_permissions):
             return empty_result()
 
         self._init_resource_maps()
@@ -94,7 +95,7 @@ class BaseSmartAlertsMigrator:
                     continue
                 elif choice == 'update':
                     print(f"Updating {self.entity_type_name} configuration '{config_name}' - already exists in target system")
-                    result = self._update_config(config, target_config.get('id'), str(config_name))
+                    result = self._update_config(config, target_config.get('id'), str(config_name), target_config=target_config)
                     if result is True:
                         updated_count += 1
                     elif result is None:
@@ -145,7 +146,7 @@ class BaseSmartAlertsMigrator:
                 fetch_source=self._get_source_configs,
                 fetch_target=self._get_target_configs,
                 entity_name=f"{self.entity_type_name} configurations",
-                required_permissions=_REQUIRED_PERMISSIONS,
+                required_permissions=self.required_permissions,
             )
         except DryRunAbortedError:
             return empty_result()
@@ -259,8 +260,7 @@ class BaseSmartAlertsMigrator:
     def _create_config(self, config: Dict[str, Any], config_name: str) -> Optional[bool]:
         """Create a single configuration in the target backend."""
         raise NotImplementedError("Subclasses must implement _create_config")
-
-    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
+    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str, target_config: Optional[Dict[str, Any]] = None) -> Optional[bool]:
         """Update an existing configuration in the target backend."""
         raise NotImplementedError("Subclasses must implement _update_config")
 

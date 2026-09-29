@@ -214,18 +214,18 @@ class TestInfrastructureSmartAlertsMigrator:
         res = self.migrator._create_config(config, "New Alert")
         assert res is False
 
-    @patch('requests.put')
-    def test_update_config_success(self, mock_put):
+    @patch('requests.post')
+    def test_update_config_success(self, mock_post):
         """Test successful update of an infra alert configuration."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"id": "target-id", "name": "Existing Alert"}
         mock_response.raise_for_status = MagicMock()
-        mock_put.return_value = mock_response
+        mock_post.return_value = mock_response
 
         config = {"name": "Existing Alert", "granularity": 60000}
         res = self.migrator._update_config(config, "target-id", "Existing Alert")
         assert res is True
-        mock_put.assert_called_once()
+        mock_post.assert_called_once()
 
     @patch('requests.get')
     def test_get_channel_id_map(self, mock_get):

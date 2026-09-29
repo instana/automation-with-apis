@@ -18,6 +18,7 @@ _API_ENDPOINT = "/api/events/settings/application-alert-configs"
 class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "application smart alert"
     api_class = ApplicationAlertConfigurationApi
+    required_permissions = ["canConfigureApplicationSmartAlerts"]
 
     def __init__(self, config: Config):
         super().__init__(config)
@@ -81,10 +82,10 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             print(f"Error: {e}")
             return False
 
-    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
+    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str, target_config: Optional[Dict[str, Any]] = None) -> Optional[bool]:
         try:
-            payload = self._format_config_for_api(config)
-            response = requests.put(
+            payload = self._format_config_for_api(config, target_config=target_config)
+            response = requests.post(
                 f"{self.config.target_url}{_API_ENDPOINT}/{target_id}",
                 json=payload,
                 headers=self.config.get_target_headers(),
@@ -102,7 +103,7 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
             print(f"Error: {e}")
             return False
 
-    def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
+    def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True, target_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         formatted = copy.deepcopy(config)
         self._strip_common_metadata(formatted)
 
@@ -120,7 +121,17 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
         if src_app_id:
             if src_app_id in self.application_id_map:
                 formatted['applicationId'] = self.application_id_map[src_app_id]
-            elif self._application_map_fetched and validate:
+            elif not self._application_map_fetched:
+                # Source apps not fetched (file mode without source token).
+                # Use applicationId from the existing target config.
+                if target_config and target_config.get('applicationId'):
+                    formatted['applicationId'] = target_config['applicationId']
+                elif validate:
+                    raise ValueError(
+                        f"cannot remap applicationId '{src_app_id}' — "
+                        "provide --source-token and --source-url so the application ID map can be built"
+                    )
+            elif validate:
                 src_app_name = self.application_name_map.get(src_app_id, src_app_id)
                 raise ValueError(
                     f"application '{src_app_name}' not found in target — "
@@ -139,7 +150,12 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
                         node['applicationId'] = tgt_app_id
                     remapped_apps[tgt_app_id] = node
                 elif not self._application_map_fetched:
-                    remapped_apps[app_id] = app_node
+                    # File mode: use target applications dict from existing target config.
+                    if target_config and isinstance(target_config.get('applications'), dict):
+                        remapped_apps = target_config['applications']
+                    else:
+                        remapped_apps[app_id] = app_node
+                    break
                 else:
                     unmatched_apps.append(app_id)
             if unmatched_apps and validate:
@@ -157,6 +173,7 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
         application_id_map: Dict[str, str] = {}
         try:
             source_apps: List[Dict[str, Any]] = []
+            source_fetched = False
             app_endpoint = '/api/application-monitoring/settings/application'
 
             if self.config.source_url and self.config.source_token:
@@ -167,6 +184,7 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
                 )
                 if response.status_code == 200:
                     source_apps = response.json()
+                    source_fetched = True
 
             response = requests.get(
                 f"{self.config.target_url}{app_endpoint}",
@@ -189,7 +207,13 @@ class ApplicationSmartAlertsMigrator(BaseSmartAlertsMigrator):
                 if sa_key and sa_id and str(sa_key) in target_by_name:
                     application_id_map[str(sa_id)] = target_by_name[str(sa_key)]
 
-            self._application_map_fetched = True
+            # Only mark as fetched when source apps were actually retrieved from the
+            # API. When sourcing from a file, source_url/source_token are absent so
+            # source_apps stays empty; leaving _application_map_fetched=False tells
+            # _format_config_for_api to skip ID-remapping validation rather than
+            # raising ValueError for every config.
+            if source_fetched:
+                self._application_map_fetched = True
 
         except Exception as e:
             print(f"Warning: Failed to build application ID map: {e}")

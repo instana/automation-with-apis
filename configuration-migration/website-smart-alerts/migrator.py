@@ -19,6 +19,7 @@ _API_ENDPOINT = "/api/events/settings/website-alert-configs"
 class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "website smart alert"
     api_class = EventSettingsApi
+    required_permissions = ["canConfigureWebsiteSmartAlerts"]
 
     def __init__(self, config: Config):
         super().__init__(config)
@@ -82,10 +83,10 @@ class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
             print(f"Error: {e}")
             return False
 
-    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
+    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str, target_config: Optional[Dict[str, Any]] = None) -> Optional[bool]:
         try:
-            payload = self._format_config_for_api(config)
-            response = requests.put(
+            payload = self._format_config_for_api(config, target_config=target_config)
+            response = requests.post(
                 f"{self.config.target_url}{_API_ENDPOINT}/{target_id}",
                 json=payload,
                 headers=self.config.get_target_headers(),
@@ -103,7 +104,7 @@ class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
             print(f"Error: {e}")
             return False
 
-    def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
+    def _format_config_for_api(self, config: Dict[str, Any], validate: bool = True, target_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         formatted = copy.deepcopy(config)
         self._strip_common_metadata(formatted)
 
@@ -120,7 +121,18 @@ class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
         if src_website_id:
             if src_website_id in self.website_id_map:
                 formatted['websiteId'] = self.website_id_map[src_website_id]
-            elif self._website_map_fetched and validate:
+            elif not self._website_map_fetched:
+                # Source websites were not fetched (file mode without source token).
+                # Use the websiteId from the existing target config — it is the
+                # correct target-side ID for this alert.
+                if target_config and target_config.get('websiteId'):
+                    formatted['websiteId'] = target_config['websiteId']
+                elif validate:
+                    raise ValueError(
+                        f"cannot remap websiteId '{src_website_id}' — "
+                        "provide --source-token and --source-url so the website ID map can be built"
+                    )
+            elif validate:
                 src_website_name = self.website_name_map.get(src_website_id, src_website_id)
                 raise ValueError(
                     f"website '{src_website_name}' not found in target — "
@@ -133,6 +145,7 @@ class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
         website_id_map: Dict[str, str] = {}
         try:
             source_websites: List[Dict[str, Any]] = []
+            source_fetched = False
             website_endpoint = '/api/website-monitoring/config'
 
             if self.config.source_url and self.config.source_token:
@@ -143,6 +156,7 @@ class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
                 )
                 if response.status_code == 200:
                     source_websites = response.json()
+                    source_fetched = True
 
             response = requests.get(
                 f"{self.config.target_url}{website_endpoint}",
@@ -164,7 +178,8 @@ class WebsiteSmartAlertsMigrator(BaseSmartAlertsMigrator):
                 if sw_name and sw_id and sw_name in target_by_name:
                     website_id_map[str(sw_id)] = target_by_name[str(sw_name)]
 
-            self._website_map_fetched = True
+            if source_fetched:
+                self._website_map_fetched = True
 
         except Exception as e:
             print(f"Warning: Failed to build website ID map: {e}")

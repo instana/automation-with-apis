@@ -114,19 +114,26 @@ class WebsiteConfigMigrator:
 
         return prompt_duplicate("Website", website_name)
 
-    def _update_website_config(self, website_name: str, target_id: str) -> bool:
+    def _update_website_config(self, website_name: str, target_id: str, target_name: str) -> bool:
         """Rename / update a website in the target backend.
 
         The website monitoring config PUT endpoint accepts the same query-param
         style as POST: PUT /api/website-monitoring/config/{id}?name=…
 
+        If source and target names are identical there is nothing to update —
+        the API returns 400 for a rename-to-same-name request, so we skip the call.
+
         Args:
             website_name: The desired name (from source)
             target_id: The existing target website ID to update
+            target_name: The current name in the target (used to detect no-op renames)
 
         Returns:
-            True if successful, False otherwise
+            True if successful (or already up-to-date), False otherwise
         """
+        if website_name == target_name:
+            print(f"Website '{website_name}' already has the correct name in target, skipping update")
+            return True
         try:
             response = requests.put(
                 f"{self.config.target_url}{self.req_website_config}/{target_id}?name={website_name}",
@@ -223,7 +230,7 @@ class WebsiteConfigMigrator:
                     continue
                 elif choice == 'update':
                     target_id = website_mapping[source_id]
-                    if self._update_website_config(str(source_name), target_id):
+                    if self._update_website_config(str(source_name), target_id, str(source_name)):
                         updated_count += 1
                     continue
                 elif choice == 'cancel':

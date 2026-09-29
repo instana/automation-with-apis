@@ -200,8 +200,9 @@ def main():
         mobile_app_configs_parser.add_argument('--target-url', help='URL for target backend')
         mobile_app_configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         mobile_app_configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for mobile app configs (api or file)')
-        mobile_app_configs_parser.add_argument('--events-file-path', help='Path to the mobile app configs JSON file (when using file source)')
+        mobile_app_configs_parser.add_argument('--events-file-path', default='source_mobile_app_configs.json', help='Path to the mobile app configs JSON file (default: source_mobile_app_configs.json)')
         mobile_app_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate mobile app is found (default: ask)')
+        mobile_app_configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Parse arguments
         args = parser.parse_args()

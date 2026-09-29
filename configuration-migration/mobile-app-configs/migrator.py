@@ -6,6 +6,10 @@ from typing import Dict, List, Any, Optional
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import Config
+from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
+from utils import print_dry_run_preview
+
+_REQUIRED_PERMISSIONS = ["canConfigureMobileAppMonitoring"]
 
 class MobileAppConfigMigrator:
     """Handles migration of mobile app monitoring configurations between backends."""
@@ -126,19 +130,26 @@ class MobileAppConfigMigrator:
             else:
                 print("Invalid choice. Please try again.")
 
-    def _update_mobile_app_config(self, mobile_app_name: str, target_id: str) -> bool:
+    def _update_mobile_app_config(self, mobile_app_name: str, target_id: str, target_name: str) -> bool:
         """Rename / update a mobile app in the target backend.
 
         The mobile app monitoring config PUT endpoint accepts the same query-param
-        style as POST: PUT /api/mobile-app-monitoring/config{id}?name=…
+        style as POST: PUT /api/mobile-app-monitoring/config/{id}?name=…
+
+        If the source and target names are identical there is nothing to update —
+        the API returns 400 for a rename-to-same-name request, so we skip the call.
 
         Args:
             mobile_app_name: The desired name (from source)
             target_id: The existing target mobile app ID to update
+            target_name: The current name in the target (used to detect no-op renames)
 
         Returns:
-            True if successful, False otherwise
+            True if successful (or already up-to-date), False otherwise
         """
+        if mobile_app_name == target_name:
+            print(f"Mobile app '{mobile_app_name}' already has the correct name in target, skipping update")
+            return True
         try:
             response = requests.put(
                 f"{self.config.target_url}{self.req_mobile_app_config}/{target_id}?name={mobile_app_name}",
@@ -185,6 +196,12 @@ class MobileAppConfigMigrator:
         # Validate configuration
         self.config.validate()
 
+        if self.config.dry_run:
+            return self._dry_run()
+
+        if not check_permissions(self.config, _REQUIRED_PERMISSIONS):
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "mobile_app_mapping": {}}
+
         print("Starting migration of mobile app configurations...")
 
         # Get source mobile apps
@@ -228,7 +245,7 @@ class MobileAppConfigMigrator:
                     continue
                 elif choice == 'update':
                     target_id = mobile_app_mapping[source_id]
-                    if self._update_mobile_app_config(str(source_name), target_id):
+                    if self._update_mobile_app_config(str(source_name), target_id, str(source_name)):
                         updated_count += 1
                     continue
                 elif choice == 'cancel':
@@ -252,4 +269,61 @@ class MobileAppConfigMigrator:
             "updated": updated_count,
             "skipped": skipped_count,
             "mobile_app_mapping": mobile_app_mapping,
+        }
+
+    def _dry_run(self) -> Dict[str, Any]:
+        """Preview what would happen during migration without making any changes."""
+        try:
+            source_mobile_apps, target_mobile_apps = dry_run_connectivity_check(
+                self.config,
+                fetch_source=self._get_source_mobile_app_config,
+                fetch_target=self._get_target_mobile_app_config,
+                entity_name="mobile app configs",
+                required_permissions=_REQUIRED_PERMISSIONS,
+            )
+        except DryRunAbortedError:
+            return {"source": 0, "migrated": 0, "updated": 0, "skipped": 0, "mobile_app_mapping": {}}
+
+        mobile_app_mapping = self._build_mobile_app_mapping(source_mobile_apps, target_mobile_apps)
+
+        would_create = 0
+        would_update = 0
+        skipped_invalid = 0
+        create_lines: List[str] = []
+        update_lines: List[str] = []
+        skip_lines: List[str] = []
+
+        for source_mobile_app in source_mobile_apps:
+            source_id = source_mobile_app.get('id')
+            source_name = source_mobile_app.get('name')
+
+            if not source_name or not source_id:
+                skip_lines.append("  ✗ Would skip    (mobile app with missing name or id)")
+                skipped_invalid += 1
+                continue
+
+            if source_id in mobile_app_mapping:
+                update_lines.append(f"  ~ Would update  '{source_name}' (exists in target by name match)")
+                would_update += 1
+            else:
+                create_lines.append(f"  ✓ Would create  '{source_name}'")
+                would_create += 1
+
+        skipped_total = skipped_invalid
+        print_dry_run_preview(
+            create_lines, update_lines, skip_lines,
+            source_count=len(source_mobile_apps),
+            target_count=len(target_mobile_apps),
+            would_create=would_create,
+            would_update=would_update,
+            skipped_total=skipped_total,
+            skipped_detail=f"{skipped_invalid} invalid",
+            entity_name="mobile app configs",
+        )
+        return {
+            "source": len(source_mobile_apps),
+            "migrated": would_create,
+            "updated": would_update,
+            "skipped": skipped_total,
+            "mobile_app_mapping": {},
         }

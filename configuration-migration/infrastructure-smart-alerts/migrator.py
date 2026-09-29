@@ -19,6 +19,7 @@ _API_ENDPOINT = "/api/events/settings/infra-alert-configs"
 class InfrastructureSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "infrastructure smart alert"
     api_class = InfrastructureAlertConfigurationApi
+    required_permissions = ["canConfigureGlobalInfraSmartAlerts"]
 
     def _fetch_source_configs_from_api(self) -> Optional[List[Dict[str, Any]]]:
         try:
@@ -72,10 +73,10 @@ class InfrastructureSmartAlertsMigrator(BaseSmartAlertsMigrator):
             print(f"Error: {e}")
             return False
 
-    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str) -> Optional[bool]:
+    def _update_config(self, config: Dict[str, Any], target_id: str, config_name: str, target_config: Optional[Dict[str, Any]] = None) -> Optional[bool]:
         try:
             payload = self._format_config_for_api(config)
-            response = requests.put(
+            response = requests.post(
                 f"{self.config.target_url}{_API_ENDPOINT}/{target_id}",
                 json=payload,
                 headers=self.config.get_target_headers(),
