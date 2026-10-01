@@ -40,6 +40,7 @@ def run_tests():
         'tests/test_permissions.py',
         'tests/test_rate_limiter_and_async_client.py',
         'tests/test_smart_alerts_dry_run.py',
+        'tests/test_synthetic_configs_migrator.py',
     ]
     
     total_passed = 0
