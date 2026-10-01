@@ -21,17 +21,26 @@ def run_tests():
     
     # Test files to run
     test_files = [
+        'tests/test_utils.py',
         'tests/test_config.py',
+        'tests/test_config_class.py',
         'tests/test_cli.py',
         'tests/test_events_migrator.py',
         'tests/test_alert_channels_migrator.py',
         'tests/test_alert_configs_migrator.py',
         'tests/test_custom_dashboards_migrator.py',
+        'tests/test_custom_dashboards_migrator_async.py',
         'tests/test_maintenance_configs_migrator.py',
         'tests/test_website_configs_migrator.py',
         'tests/test_application_configs_migrator.py',
         'tests/test_service_configs_migrator.py',
-        'tests/test_endpoint_configs_migrator.py'
+        'tests/test_endpoint_configs_migrator.py',
+        'tests/test_base_smart_alerts_migrator.py',
+        'tests/test_infrastructure_smart_alerts_migrator.py',
+        'tests/test_permissions.py',
+        'tests/test_rate_limiter_and_async_client.py',
+        'tests/test_smart_alerts_dry_run.py',
+        'tests/test_synthetic_configs_migrator.py',
     ]
     
     total_passed = 0
@@ -83,47 +92,49 @@ def run_tests():
     if total_failed == 0:
         print("\n🎉 All tests passed!")
         
-        # Run coverage report for config.py only (which works)
+        # Run full coverage across all source modules
         print("\n" + "=" * 60)
         print("📊 COVERAGE REPORT")
         print("=" * 60)
-        
+
         try:
-            # Run coverage for config.py which we can test properly
             coverage_result = subprocess.run([
-                'uv', 'run', 'pytest', 'tests/test_config.py', '--cov=config', 
-                '--cov-report=term-missing', '--cov-report=html:htmlcov'
+                'uv', 'run', 'pytest', 'tests/',
+                '--cov=.',
+                '--cov-report=term-missing',
+                '--cov-report=html:htmlcov',
             ], env=env, capture_output=True, text=True)
-            
-            if coverage_result.returncode in [0, 1]:  # pytest returns 1 when some tests fail but coverage works
+
+            if coverage_result.returncode in [0, 1]:
                 print("✅ Coverage report generated successfully!")
                 print("\n📁 HTML coverage report saved to: htmlcov/index.html")
-                
-                # Extract and display coverage summary
+
+                # Extract and display per-file coverage + TOTAL line
                 lines = coverage_result.stdout.split('\n')
-                coverage_found = False
+                in_table = False
+                table_lines = []
                 for line in lines:
-                    if 'TOTAL' in line and '%' in line:
-                        print(f"\n📈 Overall Coverage: {line.strip()}")
-                        coverage_found = True
+                    if line.startswith('Name') and 'Stmts' in line:
+                        in_table = True
+                    if in_table:
+                        table_lines.append(line)
+                    if in_table and line.startswith('TOTAL'):
                         break
-                
-                if not coverage_found:
-                    # Look for config.py specific coverage
+
+                if table_lines:
+                    print("\n📋 Coverage by module:")
+                    for tl in table_lines:
+                        print(f"   {tl}")
+                else:
+                    # Fallback: just print the TOTAL line
                     for line in lines:
-                        if 'config.py' in line and '%' in line:
-                            print(f"\n📈 Config.py Coverage: {line.strip()}")
+                        if 'TOTAL' in line and '%' in line:
+                            print(f"\n📈 Overall Coverage: {line.strip()}")
                             break
-                        
-                # Show what we're covering
-                print("\n📋 Coverage includes:")
-                print("   ✅ config.py - Configuration management (69% coverage)")
-                print("   ⚠️  Migrator classes - Limited coverage due to import issues")
-                print("   📝 Note: Full coverage requires resolving module import conflicts")
             else:
                 print("⚠️  Coverage report generation failed")
                 print(f"Error: {coverage_result.stderr}")
-                
+
         except Exception as e:
             print(f"⚠️  Coverage report error: {e}")
         

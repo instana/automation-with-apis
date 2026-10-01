@@ -1,11 +1,9 @@
 """Core functionality for migrating custom events between backends."""
 
-import sys
 import requests
 import urllib3
 import json
 from typing import Dict, List, Any, Optional
-
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))

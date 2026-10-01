@@ -1,6 +1,6 @@
 # Instana Configuration Migration Tool
 
-A comprehensive, enterprise-grade tool for migrating Instana configurations between different environments, instances, and organizations. This tool streamlines the process of moving custom events, alert channels, alert configurations, application and service configurations, and other Instana resources across your infrastructure.
+A comprehensive, enterprise-grade tool for migrating Instana configurations between different environments, instances, and organisations. This tool streamlines the process of moving custom events, alert channels, alert configurations, application and service configurations, smart alerts, custom dashboards, and more.
 
 ## Overview
 
@@ -10,119 +10,105 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 - **Migrate configurations** when upgrading Instana versions or moving between instances
 - **Replicate successful configurations** from one environment to another
 - **Backup and restore** critical monitoring configurations
-- **Comply with infrastructure-as-code** practices for monitoring configurations
+- **Preview changes safely** with a built-in dry-run mode before writing anything
 
 ## Supported Resources
 
-### 1. Custom Event Specifications
-- **Event rules** and conditions
-- **Metric patterns** and thresholds
-- **Severity levels** and expiration times
-- **Entity type filtering**
+| # | Resource | CLI subcommand |
+|---|---|---|
+| 1 | Custom Event Specifications | `events` |
+| 2 | Alert Channels | `channels` |
+| 3 | Alert Configurations | `configs` |
+| 4 | Application Configurations | `applications` |
+| 5 | Service Configurations | `services` |
+| 6 | Endpoint Configurations | `endpoints` |
+| 7 | Custom Dashboards | `custom-dashboards` |
+| 8 | Maintenance Configurations | `maintenance-configs` |
+| 9 | Website Configurations | `website-configs` |
+| 10 | Application Smart Alerts | `application-smart-alerts` |
+| 11 | Website Smart Alerts | `website-smart-alerts` |
+| 12 | Mobile App Smart Alerts | `mobile-app-smart-alerts` |
+| 13 | Infrastructure Smart Alerts | `infrastructure-smart-alerts` |
 
-### 2. Alert Channels
-- **Email notifications** with custom subjects
-- **Slack integrations** with webhooks
-- **Webhook endpoints** for custom integrations
-- **PagerDuty** and other incident management tools
+### Resource details
 
-### 3. Alert Configurations
-- **Alert rules** and conditions
-- **Threshold configurations** and operators
-- **Time windows** and evaluation periods
-- **Integration mappings** to alert channels
+**Custom Event Specifications** — event rules and conditions, metric patterns and thresholds, severity levels, entity type filtering.
 
-### 4. Application Configurations (Application Perspectives)
-- **Application Perspectives** with boundary scope and match specifications
-- **Access rules** and business criticality
-- **Tag filter expressions**
-- **Duplicate detection** (skip, update, ask)
+**Alert Channels** — email, Slack, webhook, PagerDuty, and other notification channels.
 
-### 5. Service Configurations
-- **Custom service rules** with match specifications
-- **Service labels** and comments
-- **Duplicate detection** (skip, update, ask)
+**Alert Configurations** — alert rules and threshold conditions, time windows, alert channel mappings.
 
-### 6. Endpoint Configurations
-- **Custom endpoint mapping rules** per service
-- **Endpoint case**, path template rules, and first-path-segment rules
-- **Scoped by service ID**; use `--on-duplicate update` when source and target share the same service IDs
+**Application Configurations** — Application Perspectives with boundary scope, match specifications, access rules, and tag filter expressions.
 
-### 7. Custom Dashboards
-- **Dashboard widgets**, layouts, and access rules
-- **User mapping** from source to target by email
-- **Async migration** for improved performance (falls back to sync)
+**Service Configurations** — custom service rules, match specifications, service labels.
 
-### 8. Maintenance Configurations
-- **Maintenance windows**, one-time and recurring
-- **Schedules** including recurrence rules and time zones
-- **Scope queries** and tag filter expressions
-- **Source IDs preserved**, so identity is exact rather than name-based
+**Endpoint Configurations** — custom endpoint mapping rules per service, path template rules, first-path-segment rules. Scoped by service ID; use `--on-duplicate update` when source and target share the same service IDs.
 
-See [maintenance-configs/README.md](maintenance-configs/README.md) for details.
+**Custom Dashboards** — dashboard widgets, layouts, access rules, user mapping from source to target by email. Supports async migration for improved performance.
 
-### 9. Website Configurations
-- **Website monitoring configurations** and endpoints
-- **Name matching** and duplicate detection (skip, update, cancel)
-- **Source-to-target ID mapping**
+**Maintenance Configurations** — maintenance windows (one-time and recurring), schedules with recurrence rules and time zones, scope queries and tag filter expressions. See [maintenance-configs/README.md](maintenance-configs/README.md) for full details.
+
+**Website Configurations** — website monitoring configurations, name matching, duplicate detection.
+
+**Smart Alerts (Application / Website / Mobile App / Infrastructure)** — smart alert configurations with alert channel remapping to target IDs. Application smart alerts additionally remap application IDs; website smart alerts remap website IDs; mobile app smart alerts remap mobile app IDs. All four support `--dry-run` and `--on-duplicate`.
 
 ## Installation
 
 ### Prerequisites
+
 - **Python 3.8+** (3.9+ recommended)
 - **uv** package manager (recommended) or pip
-- **Instana access** with API tokens
-- **Network connectivity** to Instana instances
+- **API tokens** for both source and target Instana instances
+- **Network connectivity** to both Instana instances
 
 ### Using uv (Recommended)
 
 ```bash
 # Clone the repository
 git clone https://github.com/instana/automation-with-apis.git
-cd configuration-migration
+cd automation-with-apis/configuration-migration
 
-# Install dependencies using uv
+# Install dependencies
 uv sync
 
 # Verify installation
-uv run python --version
+uv run instana-migrate --help
 ```
 
 ### Using pip (Alternative)
 
 ```bash
-# Clone the repository
 git clone https://github.com/instana/automation-with-apis.git
-cd configuration-migration
+cd automation-with-apis/configuration-migration
 
-# Install dependencies
 pip install -r requirements.txt
-
-# Verify installation
-python --version
-```
-
-### Running Without Installation
-
-You can run the tool directly from the source code:
-
-```bash
-# Install minimal dependencies
-uv add requests urllib3 configparser
-
-# Run directly
-uv run configuration-migration/cli.py events --help
+python cli.py --help
 ```
 
 ## Usage
 
 ### Command Line Interface
 
-The tool provides a unified CLI with multiple subcommands for different resource types:
+The tool provides a unified CLI with one subcommand per resource type. Every subcommand accepts the same core flags:
+
+| Flag | Description |
+|---|---|
+| `--source-token` | API token for the source Instana backend |
+| `--source-url` | Base URL of the source backend |
+| `--target-token` | API token for the target Instana backend |
+| `--target-url` | Base URL of the target backend |
+| `--config-file` | Path to an INI configuration file |
+| `--no-verify-ssl` | Disable SSL certificate verification |
+| `--events-source` | `api` (default) or `file` |
+| `--events-file-path` | Path to the local JSON file when using `--events-source file` |
+| `--on-duplicate` | `skip`, `update`, or `cancel` (default: interactive prompt) |
+| `--dry-run` | Preview changes without writing anything |
+
+---
 
 #### Dry Run (Preview Before Migrating)
 
-All subcommands support a `--dry-run` flag. It connects to both backends, compares source and target configurations, then prints a per-item preview of what *would* happen — without writing anything to the target.
+All subcommands support `--dry-run`. It connects to both backends, checks permissions, compares source and target configurations, then prints a per-item preview of what *would* happen — without writing anything to the target.
 
 ```bash
 # Using a config file
@@ -339,6 +325,10 @@ uv run cli.py website-configs --events-source api --events-file-path my_website_
                               --source-token TOKEN --source-url URL --target-token TOKEN --target-url URL
 ```
 
+> **Note:** Alert channel IDs are automatically remapped from source to target by matching channel names. Application, website, and mobile app smart alerts additionally remap their respective entity IDs. Alerts whose entity IDs cannot be found in the target are skipped with a warning.
+
+---
+
 ### Configuration File Format
 
 Create a configuration file (e.g., `config.ini`) with the following format:
@@ -379,63 +369,95 @@ The tool uses the following priority order for configuration (highest to lowest)
 1. **Environment variables**
 2. **Command line arguments**
 3. **Configuration file**
+4. **Built-in defaults**
 
 ## Project Structure
 
 ```
 configuration-migration/
-├── config.py                    # Common configuration for all migrators
-├── utils.py                     # Shared utilities (build_api, print_api_error, prompt_duplicate, MigrationResult)
-├── cli.py                       # Unified CLI for all migrators
-├── config.ini                   # Common configuration file
-├── requirements.txt             # Python dependencies
-├── setup.py                     # Package setup
-├── MANIFEST.in                  # Package manifest
-├── source_events.json           # Sample custom events data
-├── custom-events-specification/
-│   └── migrator.py              # Custom events migrator
+├── cli.py                                # Unified CLI entry point
+├── config.py                             # Config class (file, env, CLI loading)
+├── permissions.py                        # Permission checks and dry-run helpers
+├── utils.py                              # Shared utilities (MigrationResult, prompt_duplicate, print_dry_run_preview, build_api)
+├── base_smart_alerts_migrator.py         # Base class for all four smart alert migrators
+├── config.ini                            # Example configuration file
+├── requirements.txt                      # Python dependencies
+├── run_tests.py                          # Test runner with coverage reporting
+├── setup.py                              # Package setup
+│
 ├── alert-channels/
-│   └── migrator.py              # Alert channels migrator
+│   └── migrator.py
 ├── alert-configs/
-│   └── migrator.py              # Alert configurations migrator
+│   └── migrator.py
 ├── application-configuration/
-│   └── migrator.py              # Application Perspectives migrator (instana_client SDK)
-├── service-configuration/
-│   └── migrator.py              # Service configurations migrator (instana_client SDK)
-├── endpoint-configuration/
-│   └── migrator.py              # Endpoint configurations migrator (instana_client SDK)
+│   └── migrator.py
+├── application-smart-alerts/
+│   └── migrator.py
 ├── custom-dashboards/
-│   ├── migrator.py              # Custom dashboards migrator (async + sync fallback)
-│   └── migrator_async.py        # Async implementation for improved performance
+│   ├── migrator.py                       # Sync migrator (uses async_client internally)
+│   ├── migrator_async.py                 # Async-first implementation
+│   ├── async_client.py                   # aiohttp client with retry + connection pooling
+│   └── rate_limiter.py                   # Token-bucket rate limiter for async requests
+├── custom-events-specification/
+│   └── migrator.py
+├── endpoint-configuration/
+│   └── migrator.py
+├── infrastructure-smart-alerts/
+│   └── migrator.py
 ├── maintenance-configs/
-│   ├── migrator.py              # Maintenance configurations migrator
-│   └── README.md                # Maintenance configurations guide
+│   ├── migrator.py
+│   └── README.md
+├── mobile-app-configs/
+├── mobile-app-smart-alerts/
+│   └── migrator.py
+├── service-configuration/
+│   └── migrator.py
 ├── website-configs/
-│   └── migrator.py              # Website configurations migrator
+│   └── migrator.py
+├── website-smart-alerts/
+│   └── migrator.py
+│
 └── tests/
-    ├── test_config.py
-    ├── test_cli.py
-    ├── test_events_migrator.py
-    ├── test_alert_channels_migrator.py
-    ├── test_alert_configs_migrator.py
-    ├── test_application_configs_migrator.py
-    ├── test_service_configs_migrator.py
-    ├── test_endpoint_configs_migrator.py
-    ├── test_custom_dashboards_migrator.py
-    ├── test_maintenance_configs_migrator.py
-    └── test_website_configs_migrator.py
+    ├── conftest.py                               # Shared fixtures, auto-mock for permissions
+    ├── test_config.py                            # EventsMigrator integration tests
+    ├── test_config_class.py                      # Config class unit tests
+    ├── test_cli.py                               # CLI argument parsing and dispatch
+    ├── test_utils.py                             # utils.py unit tests
+    ├── test_permissions.py                       # permissions.py unit tests
+    ├── test_events_migrator.py                   # Custom events migrator
+    ├── test_alert_channels_migrator.py           # Alert channels migrator
+    ├── test_alert_configs_migrator.py            # Alert configurations migrator
+    ├── test_application_configs_migrator.py      # Application configurations migrator
+    ├── test_service_configs_migrator.py          # Service configurations migrator
+    ├── test_endpoint_configs_migrator.py         # Endpoint configurations migrator
+    ├── test_custom_dashboards_migrator.py        # Custom dashboards migrator (sync)
+    ├── test_custom_dashboards_migrator_async.py  # Custom dashboards migrator (async)
+    ├── test_maintenance_configs_migrator.py      # Maintenance configurations migrator
+    ├── test_website_configs_migrator.py          # Website configurations migrator
+    ├── test_base_smart_alerts_migrator.py        # Base smart alerts migrator
+    ├── test_infrastructure_smart_alerts_migrator.py
+    ├── test_smart_alerts_dry_run.py              # Dry-run for all four smart alert types
+    ├── test_rate_limiter_and_async_client.py     # Async infrastructure tests
+    └── test_permissions.py                       # Already listed above
 ```
 
 ## Features
 
 ### File-Based Source
 
-You can now use a local JSON file as the source for custom events or alert channels instead of fetching them from an API:
+Any subcommand can read from a local JSON file instead of the source API. This is useful when you have already exported data, want to work offline, or need to edit the source before migrating.
 
-1. **Reading from file**: Use the `--events-source file` option to read from a local file.
-2. **Automatic file saving**: When fetching from the API, data is automatically saved to the file specified by `--events-file-path`.
+```bash
+# Use a local file as the source (no source credentials needed)
+uv run cli.py events \
+  --events-source file \
+  --events-file-path my_events.json \
+  --target-token TOKEN --target-url URL
+```
 
-#### Example Custom Events JSON file format:
+#### Example JSON formats
+
+**Custom Events:**
 ```json
 [
   {
@@ -560,138 +582,102 @@ The tool is designed to be easily extensible. To add a new resource type:
 
 ### Test Suite Overview
 
-The project includes a comprehensive test suite covering all core functionality:
-
-- **✅ 100% test pass rate** - All tests currently passing
-- **✅ 69% code coverage** for core modules
-- **✅ Comprehensive mocking** for external dependencies
-- **✅ Error handling validation** for edge cases
+- **87% code coverage** across all source modules
+- **565+ tests** across 19 test files, all passing
+- All external HTTP calls are mocked — no live Instana instance required
 
 ### Running Tests
 
-#### Quick Test Run
 ```bash
-# Run all tests with detailed summary
+# Run the full suite with coverage report
 uv run python run_tests.py
-```
 
-This command will:
-- Run all tests across 11 test files individually
-- Provide detailed pass/fail status for each test
-- Generate coverage reports
-- Display comprehensive test summary
+# Run a specific test file
+uv run pytest tests/test_config_class.py -v
+
+# Run a single test
+uv run pytest tests/test_config_class.py::TestConfigValidate::test_missing_source_token_raises -v
+
+# Run the full suite directly via pytest (with coverage)
+uv run pytest tests/ --cov=. --cov-report=term-missing
+
+# Generate an HTML coverage report
+uv run pytest tests/ --cov=. --cov-report=html:htmlcov
+```
 
 ### Test Structure
 
 #### Test Files
-```
-tests/
-├── test_config.py                          # Configuration management tests
-├── test_cli.py                             # CLI interface tests
-├── test_events_migrator.py                 # Custom events migrator tests
-├── test_alert_channels_migrator.py         # Alert channels migrator tests
-├── test_alert_configs_migrator.py          # Alert configs migrator tests
-├── test_application_configs_migrator.py    # Application configs migrator tests
-├── test_service_configs_migrator.py        # Service configs migrator tests
-├── test_endpoint_configs_migrator.py       # Endpoint configs migrator tests
-├── test_custom_dashboards_migrator.py      # Custom dashboards migrator tests
-├── test_maintenance_configs_migrator.py    # Maintenance configs migrator tests
-└── test_website_configs_migrator.py        # Website configs migrator tests
-```
+
+| File | What it covers |
+|---|---|
+| `test_config_class.py` | `Config` class — defaults, `from_args()`, `load_from_file()`, `load_from_env()`, `validate()`, headers |
+| `test_config.py` | `EventsMigrator` integration tests |
+| `test_cli.py` | CLI argument parsing and subcommand dispatch |
+| `test_utils.py` | `MigrationResult` helpers, `prompt_duplicate()`, `print_dry_run_preview()`, `print_api_error()`, `build_api()` |
+| `test_permissions.py` | `check_destination_permissions()`, `check_permissions()`, `dry_run_connectivity_check()` |
+| `test_events_migrator.py` | Custom events migrator |
+| `test_alert_channels_migrator.py` | Alert channels migrator |
+| `test_alert_configs_migrator.py` | Alert configurations migrator |
+| `test_application_configs_migrator.py` | Application configurations migrator |
+| `test_service_configs_migrator.py` | Service configurations migrator |
+| `test_endpoint_configs_migrator.py` | Endpoint configurations migrator |
+| `test_custom_dashboards_migrator.py` | Custom dashboards migrator (sync) |
+| `test_custom_dashboards_migrator_async.py` | Custom dashboards migrator (async) |
+| `test_maintenance_configs_migrator.py` | Maintenance configurations migrator |
+| `test_website_configs_migrator.py` | Website configurations migrator |
+| `test_base_smart_alerts_migrator.py` | `BaseSmartAlertsMigrator` shared logic |
+| `test_infrastructure_smart_alerts_migrator.py` | Infrastructure smart alerts migrator |
+| `test_smart_alerts_dry_run.py` | Dry-run for all four smart alert types + CLI flag tests |
+| `test_rate_limiter_and_async_client.py` | `RateLimiter` and `AsyncHTTPClient` |
 
 #### Test Categories
 
-##### Configuration Tests (`test_config.py`)
-- ✅ Default value initialization
-- ✅ Configuration loading from files
-- ✅ Environment variable handling
-- ✅ Header generation for API requests
-- ✅ Validation logic for required fields
-- ✅ Error handling for missing credentials
+**Configuration** (`test_config_class.py`) — default values, file loading, environment variable overrides, validation error paths, header generation, CLI argument precedence.
 
-##### Migrator Tests
-- ✅ Initialization and setup
-- ✅ Source data retrieval (file and API)
-- ✅ Target data retrieval
-- ✅ Data creation and update operations
-- ✅ Error handling and edge cases
+**Migrator tests** — source and target data retrieval, creation, update, duplicate handling, error cases, dry-run preview output.
 
-##### CLI Tests (`test_cli.py`)
-- ✅ Command-line argument parsing
-- ✅ Subcommand execution
-- ✅ Error handling for invalid commands
+**CLI tests** (`test_cli.py`) — subcommand parsing, config wiring, exit codes.
+
+**Shared infrastructure** (`test_utils.py`, `test_permissions.py`) — `MigrationResult` helpers, interactive duplicate prompt, dry-run preview formatter, permission check, connectivity check abort paths.
 
 ### Test Dependencies
 
-The test suite uses the following testing tools:
-- **pytest**: Test framework and runner
-- **pytest-cov**: Coverage reporting
-- **unittest.mock**: Mocking external dependencies
-- **requests**: HTTP request mocking
+- `pytest` — test framework
+- `pytest-cov` — coverage reporting
+- `pytest-mock` — `mocker` fixture
+- `unittest.mock` — `@patch`, `MagicMock`, `AsyncMock`
+- `aiohttp`, `aiohttp-retry` — required for async dashboard tests
 
-### Development Testing
+### Writing New Tests
 
-#### Running Individual Tests
-```bash
-# Run specific test file
-uv run pytest tests/test_config.py
+1. Name files `test_<module>.py`, test methods `test_<method>_<scenario>`
+2. Mock all external HTTP calls with `@patch`
+3. Use the `sample_config` fixture from `conftest.py` for a ready-made `MagicMock` config
+4. Test both the happy path and failure paths (network errors, missing permissions, invalid data)
 
-# Run specific test method
-uv run pytest tests/test_config.py::TestConfig::test_init_default_values
-
-# Run with verbose output
-uv run pytest tests/test_config.py -v
-```
-
-#### Coverage Analysis
-```bash
-# Generate coverage report
-uv run pytest tests/test_config.py --cov=config --cov-report=term-missing
-
-# Generate HTML coverage report
-uv run pytest tests/test_config.py --cov=config --cov-report=html:htmlcov
-```
-
-### Test Best Practices
-
-#### Writing New Tests
-1. **Follow naming convention**: `test_<module_name>.py`
-2. **Use descriptive test names**: `test_<method>_<scenario>`
-3. **Mock external dependencies**: Use `@patch` decorators
-4. **Test both success and failure cases**
-5. **Validate error messages and edge cases**
-
-#### Example Test Structure
 ```python
 import pytest
 from unittest.mock import patch, MagicMock
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from config import Config
 
-class TestConfig:
-    def test_init_default_values(self):
-        """Test default value initialization."""
-        config = Config()
-        assert config.source_token is None
-        assert config.source_url is None
-    
-    @patch('config.requests.get')
-    def test_api_call_success(self, mock_get):
-        """Test successful API call."""
+class TestMyMigrator:
+    def setup_method(self):
+        self.config = Config()
+        self.config.source_token = "src-tok"
+        self.config.source_url = "http://source.example.com"
+        self.config.target_token = "tgt-tok"
+        self.config.target_url = "http://target.example.com"
+
+    @patch('migrator.requests.get')
+    def test_fetch_source_success(self, mock_get):
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {"data": "test"}
-        # Test implementation
+        mock_get.return_value.json.return_value = [{"id": "1", "name": "test"}]
+        # assert ...
 ```
-
-### Known Limitations
-
-#### Import Path Issues
-Some migrator tests have limited coverage due to Python import path conflicts when running the full test suite. This is a known limitation that doesn't affect the core functionality but impacts coverage reporting.
-
-#### Workarounds
-- Individual tests run successfully
-- Core functionality is fully tested
-- Coverage is accurate for working modules
-
 
 ## License
 
