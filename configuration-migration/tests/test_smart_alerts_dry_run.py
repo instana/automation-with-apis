@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(_root, 'infrastructure-smart-alerts'))
 sys.path.insert(0, os.path.join(_root, 'application-smart-alerts'))
 sys.path.insert(0, os.path.join(_root, 'website-smart-alerts'))
 sys.path.insert(0, os.path.join(_root, 'mobile-app-smart-alerts'))
+sys.path.insert(0, os.path.join(_root, 'synthetic-smart-alerts'))
 
 from config import Config
 from base_smart_alerts_migrator import BaseSmartAlertsMigrator, _REQUIRED_PERMISSIONS
@@ -294,6 +295,7 @@ class TestCliFlags:
         "website-smart-alerts",
         "mobile-app-smart-alerts",
         "infrastructure-smart-alerts",
+        "synthetic-smart-alerts",
     ])
     def test_dry_run_flag_accepted(self, subcommand):
         args = self._parse(subcommand, ["--dry-run",
@@ -308,6 +310,7 @@ class TestCliFlags:
         "website-smart-alerts",
         "mobile-app-smart-alerts",
         "infrastructure-smart-alerts",
+        "synthetic-smart-alerts",
     ])
     def test_on_duplicate_flag_accepted(self, subcommand):
         for choice in ("skip", "update", "cancel"):

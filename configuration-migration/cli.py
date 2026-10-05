@@ -217,6 +217,19 @@ def main():
         synthetic_configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate synthetic config is found (default: ask)')
         synthetic_configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
+        # Synthetic smart alerts migrator
+        synthetic_smart_alerts_parser = subparsers.add_parser('synthetic-smart-alerts', help='Migrate synthetic smart alert configurations')
+        synthetic_smart_alerts_parser.add_argument('--config-file', help='Path to configuration file')
+        synthetic_smart_alerts_parser.add_argument('--source-token', help='API token for source backend')
+        synthetic_smart_alerts_parser.add_argument('--source-url', help='URL for source backend')
+        synthetic_smart_alerts_parser.add_argument('--target-token', help='API token for target backend')
+        synthetic_smart_alerts_parser.add_argument('--target-url', help='URL for target backend')
+        synthetic_smart_alerts_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
+        synthetic_smart_alerts_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for synthetic smart alerts (api or file)')
+        synthetic_smart_alerts_parser.add_argument('--events-file-path', default='source_synthetic_smart_alerts.json', help='Path to the synthetic smart alerts JSON file (default: source_synthetic_smart_alerts.json)')
+        synthetic_smart_alerts_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate synthetic smart alert is found (default: ask)')
+        synthetic_smart_alerts_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
+
         # Parse arguments
         args = parser.parse_args()
         
@@ -345,6 +358,13 @@ def main():
             sys.path.append(os.path.join(os.path.dirname(__file__), 'synthetic-configs'))
             from migrator import SyntheticConfigMigrator  # noqa: F811
             migrator = SyntheticConfigMigrator(config)
+            result = migrator.migrate()
+            sys.exit(1 if result["failed"] > 0 else 0)
+
+        elif args.command == 'synthetic-smart-alerts':
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'synthetic-smart-alerts'))
+            from migrator import SyntheticSmartAlertsMigrator
+            migrator = SyntheticSmartAlertsMigrator(config)
             result = migrator.migrate()
             sys.exit(1 if result["failed"] > 0 else 0)
 
