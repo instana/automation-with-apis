@@ -122,7 +122,7 @@ class AlertChannelsMigrator:
                     continue
 
                 # Content differs — ask the user what to do
-                choice = self._prompt_for_duplicate_channel(str(channel_name))
+                choice = self.config.on_duplicate if self.config.on_duplicate != 'ask' else self._prompt_for_duplicate_channel(str(channel_name))
                 if choice == 'skip':
                     print(f"Skipping channel '{channel_name}' - already exists in target system")
                     skipped_user_count += 1

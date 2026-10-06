@@ -102,6 +102,9 @@ class EndpointConfigMigrator:
                         f"⊘ Endpoint config for service '{service_id}' already exists, skipping..."
                     )
                     skipped_user += 1
+                elif self.config.on_duplicate == "cancel":
+                    print("Migration cancelled by user.")
+                    break
                 else:
                     choice = prompt_duplicate("Endpoint config for service", service_id)
                     if choice == "skip":

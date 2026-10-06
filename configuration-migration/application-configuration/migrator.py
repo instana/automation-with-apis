@@ -101,6 +101,9 @@ class ApplicationConfigMigrator:
                 elif self.config.on_duplicate == "skip":
                     print(f"⊘ Application config '{label}' already exists, skipping...")
                     skipped_user += 1
+                elif self.config.on_duplicate == "cancel":
+                    print("Migration cancelled by user.")
+                    break
                 else:
                     choice = prompt_duplicate("Application config", label)
                     if choice == "skip":

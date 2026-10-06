@@ -29,6 +29,7 @@ def main():
         events_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         events_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for custom events (api or file)')
         events_parser.add_argument('--events-file-path', default='source_events.json', help='Path to the source events JSON file (default: source_events.json)')
+        events_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate event is found (default: ask)')
         events_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
         
         # Alert channels migrator
@@ -41,6 +42,7 @@ def main():
         channels_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         channels_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert channels (api or file)')
         channels_parser.add_argument('--events-file-path', default='source_channels.json', help='Path to the source channels JSON file (default: source_channels.json)')
+        channels_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate alert channel is found (default: ask)')
         channels_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
         
         # Alert configurations migrator
@@ -53,6 +55,7 @@ def main():
         configs_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL certificate verification')
         configs_parser.add_argument('--events-source', choices=['api', 'file'], help='Source for alert configurations (api or file)')
         configs_parser.add_argument('--events-file-path', default='source_alert_configs.json', help='Path to the source alert configurations JSON file (default: source_alert_configs.json)')
+        configs_parser.add_argument('--on-duplicate', choices=['skip', 'update', 'cancel'], help='Action to take when a duplicate alert configuration is found (default: ask)')
         configs_parser.add_argument('--dry-run', action='store_true', help='Preview what would be migrated without making any changes')
 
         # Application configurations migrator

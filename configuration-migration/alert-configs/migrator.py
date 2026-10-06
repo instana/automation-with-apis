@@ -83,10 +83,13 @@ class AlertConfigsMigrator:
                     continue
 
                 # Reuse a previous decision for this name if one was already made.
-                choice = name_decision_cache.get(config_name)
-                if choice is None:
-                    choice = self._prompt_for_duplicate_config(str(config_name))
-                    name_decision_cache[config_name] = choice
+                if self.config.on_duplicate != 'ask':
+                    choice = self.config.on_duplicate
+                else:
+                    choice = name_decision_cache.get(config_name)
+                    if choice is None:
+                        choice = self._prompt_for_duplicate_config(str(config_name))
+                        name_decision_cache[config_name] = choice
 
                 if choice == 'skip':
                     print(f"Skipping alert configuration '{config_name}' - already exists in target system")

@@ -84,6 +84,9 @@ class ServiceConfigMigrator:
                 elif self.config.on_duplicate == "skip":
                     print(f"⊘ Service config '{name}' already exists, skipping...")
                     skipped_user += 1
+                elif self.config.on_duplicate == "cancel":
+                    print("Migration cancelled by user.")
+                    break
                 else:
                     choice = prompt_duplicate("Service config", name)
                     if choice == "skip":

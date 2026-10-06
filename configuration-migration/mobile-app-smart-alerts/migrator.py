@@ -19,7 +19,7 @@ _API_ENDPOINT = "/api/events/settings/mobile-app-alert-configs"
 class MobileAppSmartAlertsMigrator(BaseSmartAlertsMigrator):
     entity_type_name = "mobile app smart alert"
     api_class = EventSettingsApi
-    required_permissions = ["canConfigureEventsAndAlerts", "canConfigureMobileAppSmartAlerts"]
+    required_permissions = ["canConfigureMobileAppSmartAlerts"]
 
     def __init__(self, config: Config):
         super().__init__(config)

@@ -91,7 +91,7 @@ class EventsMigrator:
                     print(f"Skipping event '{event_name}' - identical in target")
                     skipped_identical += 1
                     continue
-                choice = self._prompt_for_duplicate_event(str(event_name))
+                choice = self.config.on_duplicate if self.config.on_duplicate != 'ask' else self._prompt_for_duplicate_event(str(event_name))
                 if choice == 'skip':
                     print(f"Skipping event '{event_name}' - already exists in target system")
                     skipped_user += 1

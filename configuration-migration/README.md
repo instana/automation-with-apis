@@ -25,10 +25,13 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 | 7 | Custom Dashboards | `custom-dashboards` |
 | 8 | Maintenance Configurations | `maintenance-configs` |
 | 9 | Website Configurations | `website-configs` |
-| 10 | Application Smart Alerts | `application-smart-alerts` |
-| 11 | Website Smart Alerts | `website-smart-alerts` |
-| 12 | Mobile App Smart Alerts | `mobile-app-smart-alerts` |
-| 13 | Infrastructure Smart Alerts | `infrastructure-smart-alerts` |
+| 10 | Mobile App Configurations | `mobile-app-configs` |
+| 11 | Synthetic Configurations | `synthetic-configs` |
+| 12 | Application Smart Alerts | `application-smart-alerts` |
+| 13 | Website Smart Alerts | `website-smart-alerts` |
+| 14 | Mobile App Smart Alerts | `mobile-app-smart-alerts` |
+| 15 | Infrastructure Smart Alerts | `infrastructure-smart-alerts` |
+| 16 | Synthetic Smart Alerts | `synthetic-smart-alerts` |
 
 ### Resource details
 
@@ -50,7 +53,38 @@ The Instana Configuration Migration Tool is designed to solve real-world challen
 
 **Website Configurations** — website monitoring configurations, name matching, duplicate detection.
 
-**Smart Alerts (Application / Website / Mobile App / Infrastructure)** — smart alert configurations with alert channel remapping to target IDs. Application smart alerts additionally remap application IDs; website smart alerts remap website IDs; mobile app smart alerts remap mobile app IDs. All four support `--dry-run` and `--on-duplicate`.
+**Mobile App Configurations** — mobile application monitoring configurations, name matching, duplicate detection.
+
+**Synthetic Configurations** — synthetic test configurations, name matching, duplicate detection.
+
+**Smart Alerts (Application / Website / Mobile App / Infrastructure / Synthetic)** — smart alert configurations with alert channel remapping to target IDs. Application smart alerts additionally remap application IDs; website smart alerts remap website IDs; mobile app smart alerts remap mobile app IDs. All five support `--dry-run` and `--on-duplicate`.
+
+## API Token Permissions
+
+Each migrator validates the **target** API token's permissions at startup before writing anything. The **source** token only needs sufficient access to read the relevant resources — no specific permission flags are enforced on it.
+
+Additionally, every target token must have `canConfigureApiTokens` enabled so the tool can self-inspect its own permissions before starting a migration.
+
+| Resource | CLI subcommand | Required target token permissions |
+|---|---|---|
+| Custom Event Specifications | `events` | `canConfigureEventsAndAlerts` |
+| Alert Channels | `channels` | `canConfigureIntegrations` |
+| Alert Configurations | `configs` | `canConfigureEventsAndAlerts` |
+| Application Configurations | `applications` | `canConfigureApplications` |
+| Service Configurations | `services` | `canConfigureServiceMapping` |
+| Endpoint Configurations | `endpoints` | `canConfigureServiceMapping` |
+| Custom Dashboards | `custom-dashboards` | `canCreatePublicCustomDashboards`, `canEditAllAccessibleCustomDashboards`, `canConfigureUsers` |
+| Maintenance Configurations | `maintenance-configs` | `canConfigureMaintenanceWindows` |
+| Website Configurations | `website-configs` | `canConfigureEumApplications` |
+| Mobile App Configurations | `mobile-app-configs` | `canConfigureMobileAppMonitoring` |
+| Synthetic Configurations | `synthetic-configs` | `canConfigureSyntheticTests` |
+| Application Smart Alerts | `application-smart-alerts` | `canConfigureApplicationSmartAlerts` |
+| Website Smart Alerts | `website-smart-alerts` | `canConfigureWebsiteSmartAlerts` |
+| Mobile App Smart Alerts | `mobile-app-smart-alerts` |  `canConfigureMobileAppSmartAlerts` |
+| Infrastructure Smart Alerts | `infrastructure-smart-alerts` | `canConfigureGlobalInfraSmartAlerts` |
+| Synthetic Smart Alerts | `synthetic-smart-alerts` | `canConfigureGlobalSyntheticSmartAlerts` |
+
+> **Note:** `canConfigureApiTokens` is required on every target token regardless of which migrator you are running.
 
 ## Installation
 
@@ -295,10 +329,7 @@ uv run cli.py maintenance-configs --events-source file --events-file-path my_win
                                   --target-token TOKEN --target-url URL
 ```
 
-Both tokens need the `CanConfigureMaintenanceWindows` permission, which covers
-reading as well as writing. Note that `--on-duplicate update` overwrites the
-target's windows: since maintenance windows suppress alerting, confirm the
-source is authoritative before running it against production.
+> **Note:** `--on-duplicate update` overwrites the target's windows. Since maintenance windows suppress alerting, confirm the source is authoritative before running it against production.
 
 #### Website Configurations Migration
 

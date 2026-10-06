@@ -376,7 +376,7 @@ class SyntheticConfigMigrator:
             return 'skipped', None
 
         if source_id in synthetic_test_mapping:
-            choice = prompt_duplicate("Synthetic test", str(source_label))
+            choice = self.config.on_duplicate if self.config.on_duplicate != 'ask' else prompt_duplicate("Synthetic test", str(source_label))
             if choice == 'skip':
                 print(f"Synthetic test '{source_label}' already exists in target backend, skipping")
                 return 'skipped', None
