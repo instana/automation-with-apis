@@ -6,10 +6,15 @@ import requests
 from unittest.mock import patch, mock_open, MagicMock, call
 import sys
 import os
+import importlib.util
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "website-configs"))
-from migrator import WebsiteConfigMigrator
+_site_dir = os.path.join(os.path.dirname(__file__), "..", "website-configs")
+_spec = importlib.util.spec_from_file_location("migrator", os.path.join(_site_dir, "migrator.py"))
+migrator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrator)
+sys.modules['migrator'] = migrator
+WebsiteConfigMigrator = migrator.WebsiteConfigMigrator
 from config import Config
 
 
@@ -18,6 +23,7 @@ class TestWebsiteConfigMigrator:
 
     def setup_method(self):
         """Set up test fixtures."""
+        sys.modules['migrator'] = migrator
         self.config = Config()
         self.config.source_token = "source_token"
         self.config.source_url = "https://source.com"
@@ -218,7 +224,7 @@ class TestWebsiteConfigMigrator:
         mock_response = MagicMock()
         mock_put.return_value = mock_response
 
-        result = self.migrator._update_website_config("Site A", "t-existing")
+        result = self.migrator._update_website_config("Site A", "t-existing", "Old Name")
 
         assert result is True
         mock_put.assert_called_once_with(
@@ -232,7 +238,7 @@ class TestWebsiteConfigMigrator:
         """Returns False when the PUT request fails."""
         mock_put.side_effect = requests.exceptions.RequestException("error")
 
-        result = self.migrator._update_website_config("Site A", "t-existing")
+        result = self.migrator._update_website_config("Site A", "t-existing", "Old Name")
 
         assert result is False
 
@@ -359,7 +365,7 @@ class TestWebsiteConfigMigrator:
 
         result = self.migrator.migrate()
 
-        mock_update.assert_called_once_with("Site A", "t1")
+        mock_update.assert_called_once_with("Site A", "t1", "Site A")
         assert result["updated"] == 1
         assert result["migrated"] == 0
 

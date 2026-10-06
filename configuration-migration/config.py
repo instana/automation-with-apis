@@ -271,5 +271,3 @@ class Config:
             "Authorization": f"apiToken {self.target_token}",
             "Content-Type": "application/json"
         }
-
-# Made with Bob

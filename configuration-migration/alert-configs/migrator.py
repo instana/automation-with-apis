@@ -83,10 +83,13 @@ class AlertConfigsMigrator:
                     continue
 
                 # Reuse a previous decision for this name if one was already made.
-                choice = name_decision_cache.get(config_name)
-                if choice is None:
-                    choice = self._prompt_for_duplicate_config(str(config_name))
-                    name_decision_cache[config_name] = choice
+                if self.config.on_duplicate != 'ask':
+                    choice = self.config.on_duplicate
+                else:
+                    choice = name_decision_cache.get(config_name)
+                    if choice is None:
+                        choice = self._prompt_for_duplicate_config(str(config_name))
+                        name_decision_cache[config_name] = choice
 
                 if choice == 'skip':
                     print(f"Skipping alert configuration '{config_name}' - already exists in target system")
@@ -223,7 +226,7 @@ class AlertConfigsMigrator:
         )
 
     def _get_source_configs(self) -> list[dict[str, Any]] | None:
-        if self.config.events_source == "file":
+        if self.config.events_source.lower() == "file":
             try:
                 file_path = self.config.events_file_path
                 print(f"Reading alert configurations from {file_path} file...")
@@ -433,7 +436,7 @@ class AlertConfigsMigrator:
         channel_id_map = {}
         try:
             source_channels = []
-            if self.config.events_source == "file":
+            if self.config.events_source.lower() == "file":
                 if self.config.source_url and self.config.source_token:
                     response = requests.get(
                         f"{self.config.source_url}/api/events/settings/alertingChannels",
@@ -477,7 +480,7 @@ class AlertConfigsMigrator:
         event_id_map = {}
         try:
             source_events = []
-            if self.config.events_source == "file":
+            if self.config.events_source.lower() == "file":
                 if self.config.source_url and self.config.source_token:
                     response = requests.get(
                         f"{self.config.source_url}/api/events/settings/event-specifications/custom",

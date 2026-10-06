@@ -1,5 +1,6 @@
 """Core functionality for migrating alert channels between backends."""
 
+import copy
 import json
 import os
 import sys
@@ -121,7 +122,7 @@ class AlertChannelsMigrator:
                     continue
 
                 # Content differs — ask the user what to do
-                choice = self._prompt_for_duplicate_channel(str(channel_name))
+                choice = self.config.on_duplicate if self.config.on_duplicate != 'ask' else self._prompt_for_duplicate_channel(str(channel_name))
                 if choice == 'skip':
                     print(f"Skipping channel '{channel_name}' - already exists in target system")
                     skipped_user_count += 1
@@ -324,7 +325,7 @@ class AlertChannelsMigrator:
             Formatted channel data for API request
         """
         # Create a copy to avoid modifying the original
-        formatted = channel.copy()
+        formatted = copy.deepcopy(channel)
         
         # Remove fields that must not be sent to the target API.
         # Note: 'id', 'kind', and 'name' are mandatory in the POST/PUT body per the API spec.

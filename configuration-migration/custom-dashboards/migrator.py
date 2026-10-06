@@ -17,7 +17,7 @@ from config import Config
 from permissions import check_permissions, dry_run_connectivity_check, DryRunAbortedError
 from utils import MigrationResult, empty_result, make_result, partial_result, print_dry_run_preview
 
-_REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards"]
+_REQUIRED_PERMISSIONS = ["canCreatePublicCustomDashboards", "canEditAllAccessibleCustomDashboards", "canConfigureUsers"]
 
 # Import the async implementation — optional, falls back to sync if unavailable.
 try:
